@@ -103,6 +103,44 @@ function Options() {
             onChange={(e) => update('liveAutoDetect', e.target.checked)} />
         </Row>
 
+        <Row label="Best-move arrow (green)" hint="Board arrow for the top engine move">
+          <input type="checkbox" checked={s.showBestArrow}
+            onChange={(e) => update('showBestArrow', e.target.checked)} />
+        </Row>
+
+        <Row label="Alternative arrow (blue)" hint="Second-best candidate move">
+          <input type="checkbox" checked={s.showAltArrow}
+            onChange={(e) => update('showAltArrow', e.target.checked)} />
+        </Row>
+
+        <Row label="Opponent-threat arrow (red, dashed)" hint="Their strongest reply if it were their move">
+          <input type="checkbox" checked={s.showThreatArrow}
+            onChange={(e) => update('showThreatArrow', e.target.checked)} />
+        </Row>
+
+        <Row label="Overlay theme">
+          <select
+            className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm"
+            value={s.theme}
+            onChange={(e) => update('theme', e.target.value)}
+          >
+            <option value="midnight">Midnight OLED</option>
+            <option value="cyberpunk">Cyberpunk Neon</option>
+            <option value="gold">Grandmaster Gold</option>
+            <option value="light">Classic Light</option>
+          </select>
+        </Row>
+
+        <Row label="Compact mini mode" hint="Shrink the overlay to a small floating pill">
+          <input type="checkbox" checked={s.miniMode}
+            onChange={(e) => update('miniMode', e.target.checked)} />
+        </Row>
+
+        <Row label="Blunder-prevention shield" hint="Flash a warning when a hovered move drops your eval">
+          <input type="checkbox" checked={s.blunderShield}
+            onChange={(e) => update('blunderShield', e.target.checked)} />
+        </Row>
+
         <Row label="Backend API URL" hint="For game recording, e.g. http://localhost:3000 (blank = local only)">
           <input
             className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm w-48 font-mono"

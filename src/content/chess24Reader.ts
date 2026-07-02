@@ -50,7 +50,8 @@ export function readChess24Placement(board: Element | null = findChess24Board())
   if (fenEl) {
     const fen = fenEl.getAttribute('data-fen') ?? fenEl.getAttribute('data-position');
     if (fen && fen.includes('/')) {
-      return { placement: fen.split(' ')[0], flipped: false };
+      const full = fen.trim().split(/\s+/).length >= 2 ? fen.trim() : undefined;
+      return { placement: fen.split(' ')[0], flipped: false, fen: full };
     }
   }
 
@@ -62,7 +63,8 @@ export function readChess24Placement(board: Element | null = findChess24Board())
       win.__INITIAL_STATE__?.game?.fen ??
       win.__redux_state__?.game?.currentFen;
     if (fen && typeof fen === 'string' && fen.includes('/')) {
-      return { placement: fen.split(' ')[0], flipped: false };
+      const full = fen.trim().split(/\s+/).length >= 2 ? fen.trim() : undefined;
+      return { placement: fen.split(' ')[0], flipped: false, fen: full };
     }
   } catch {
     // ignore

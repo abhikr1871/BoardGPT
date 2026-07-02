@@ -1,66 +1,109 @@
 /**
- * Offscreen document script — runs Stockfish WASM in the extension's own origin.
+ * Offscreen engine host.
  *
- * The content script cannot create Workers from chrome-extension:// URLs due to
- * same-origin restrictions. This offscreen document runs in the extension's context,
- * so Worker creation and WASM compilation work perfectly.
+ * Runs in the extension's OWN origin (chrome-extension://…) so it can:
+ *   - create a Web Worker from a chrome-extension:// URL (blocked in content scripts)
+ *   - compile the Stockfish WASM (allowed by the extension_pages CSP wasm-unsafe-eval)
  *
- * Communication: content script → chrome.runtime.sendMessage → background →
- *   chrome.runtime.sendMessage → offscreen → Stockfish Worker → back up the chain.
+ * It owns BOTH engines so the page's main thread never computes:
+ *   - Stockfish 18 WASM in a Worker thread (preferred, depth 18)
+ *   - the built-in negamax engine, run here (not on chess.com's thread) as fallback
+ *
+ * Transport: a single long-lived port to the background service worker
+ * (chrome.runtime.connect). The connection itself is the "ready" signal — it is
+ * only opened once this script has executed and the listener exists, which fixes
+ * the earlier race where messages were sent before the listener was registered.
+ * Using a port (not chrome.runtime.sendMessage) also removes the message-loop bug.
  */
+import { analyzePosition, type RawLine } from '../engine/builtinEngine';
+import { getCachedEval, putCachedEval } from '../engine/evalCache';
 
-let worker: Worker | null = null;
-let ready = false;
+const PORT_NAME = 'boardgpt-engine';
+const STOCKFISH_URL = 'stockfish/stockfish.js';
 
-function createStockfishWorker(): Promise<Worker> {
-  return new Promise((resolve, reject) => {
-    try {
-      const url = chrome.runtime.getURL('stockfish/stockfish.js');
-      const w = new Worker(url);
-      w.onerror = (e) => {
-        console.error('[BoardGPT offscreen] Worker error:', e);
-        reject(new Error('stockfish worker failed'));
-      };
-      // Wait for the worker to be alive
-      const timeout = setTimeout(() => {
-        w.removeEventListener('message', handler);
-        reject(new Error('stockfish uciok timeout'));
-      }, 10000);
-      const handler = (ev: MessageEvent) => {
-        const line = typeof ev.data === 'string' ? ev.data : String(ev.data);
-        if (line.includes('uciok')) {
-          clearTimeout(timeout);
-          w.removeEventListener('message', handler);
-          resolve(w);
-        }
-      };
-      w.addEventListener('message', handler);
-      w.postMessage('uci');
-    } catch (e) {
-      reject(e);
-    }
-  });
+type EngineName = 'stockfish' | 'builtin';
+interface AnalyzeMsg {
+  type: 'analyze';
+  requestId: string;
+  fen: string;
+  multipv: number;
+  depth: number;
 }
 
-async function ensureWorker(): Promise<Worker> {
-  if (worker && ready) return worker;
-  worker = await createStockfishWorker();
-  ready = true;
-  console.log('[BoardGPT offscreen] ⚡ Stockfish WASM connected!');
-  return worker;
+// ─── Stockfish worker lifecycle (non-blocking) ──────────────────────────────
+let sfWorker: Worker | null = null;
+let sfState: 'idle' | 'starting' | 'ready' | 'failed' = 'idle';
+let sfLastTry = 0;
+const SF_RETRY_MS = 30_000;
+
+function startStockfish(): void {
+  const now = Date.now();
+  if (sfState === 'starting' || sfState === 'ready') return;
+  if (sfState === 'failed' && now - sfLastTry < SF_RETRY_MS) return;
+  sfState = 'starting';
+  sfLastTry = now;
+
+  try {
+    const url = chrome.runtime.getURL(STOCKFISH_URL);
+    const w = new Worker(url);
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      console.warn('[BoardGPT offscreen] Stockfish uciok timeout — using built-in engine');
+      sfState = 'failed';
+      try { w.terminate(); } catch {}
+    }, 15_000);
+
+    const onBoot = (ev: MessageEvent) => {
+      const line = typeof ev.data === 'string' ? ev.data : String(ev.data);
+      if (line.includes('uciok')) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        w.removeEventListener('message', onBoot);
+        sfWorker = w;
+        sfState = 'ready';
+        console.log('[BoardGPT offscreen] ⚡ Stockfish WASM ready');
+      }
+    };
+    w.addEventListener('message', onBoot);
+    w.onerror = (e: ErrorEvent | Event) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      console.warn('[BoardGPT offscreen] Stockfish worker error:', (e as ErrorEvent).message || e);
+      sfState = 'failed';
+      try { w.terminate(); } catch {}
+    };
+    w.postMessage('uci');
+  } catch (e) {
+    console.warn('[BoardGPT offscreen] Stockfish spawn failed:', e);
+    sfState = 'failed';
+  }
 }
 
-function sendCmd(
-  w: Worker,
-  cmd: string,
-  until: (line: string) => boolean,
-  timeoutMs: number,
-  onLine?: (line: string) => void,
-): Promise<void> {
+function parseInfo(line: string): { multipv: number; cp: number; mate: number | null; uci: string } | null {
+  if (!line.startsWith('info') || !line.includes(' multipv ') || !line.includes(' pv ')) return null;
+  const mpv = /(?: |^)multipv (\d+)/.exec(line);
+  const cp = / score cp (-?\d+)/.exec(line);
+  const mate = / score mate (-?\d+)/.exec(line);
+  const pv = / pv ([a-h][1-8][a-h][1-8][qrbn]?)/.exec(line);
+  if (!pv) return null;
+  return {
+    multipv: mpv ? parseInt(mpv[1], 10) : 1,
+    cp: cp ? parseInt(cp[1], 10) : mate ? (parseInt(mate[1], 10) > 0 ? 30000 : -30000) : 0,
+    mate: mate ? parseInt(mate[1], 10) : null,
+    uci: pv[1],
+  };
+}
+
+function sfSend(cmd: string, until: (l: string) => boolean, timeoutMs: number, onLine?: (l: string) => void): Promise<void> {
+  const w = sfWorker!;
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       w.removeEventListener('message', handler);
-      reject(new Error(`timeout after "${cmd}"`));
+      reject(new Error(`stockfish timeout after "${cmd}"`));
     }, timeoutMs);
     const handler = (ev: MessageEvent) => {
       const line = typeof ev.data === 'string' ? ev.data : String(ev.data);
@@ -76,72 +119,84 @@ function sendCmd(
   });
 }
 
-interface InfoLine {
-  multipv: number;
-  cp: number;
-  mate: number | null;
-  firstMoveUci: string;
+async function stockfishAnalyze(fen: string, multipv: number, depth: number): Promise<RawLine[]> {
+  await sfSend('isready', (l) => l.includes('readyok'), 10_000);
+  await sfSend(`setoption name MultiPV value ${multipv}`, () => true, 200).catch(() => {});
+  sfWorker!.postMessage(`position fen ${fen}`);
+  const best = new Map<number, { multipv: number; cp: number; mate: number | null; uci: string }>();
+  await sfSend(`go depth ${depth} multipv ${multipv}`, (l) => l.startsWith('bestmove'), 15_000, (line) => {
+    const info = parseInfo(line);
+    if (info) best.set(info.multipv, info);
+  });
+  const lines: RawLine[] = [];
+  for (let i = 1; i <= multipv; i++) {
+    const info = best.get(i);
+    if (info) lines.push({ uci: info.uci, san: info.uci, cp: info.cp, mate: info.mate });
+  }
+  if (!lines.length) throw new Error('no stockfish lines');
+  return lines;
 }
 
-function parseInfo(line: string): InfoLine | null {
-  if (!line.startsWith('info') || !line.includes(' multipv ')) return null;
-  const mpv = parseInt(line.match(/ multipv (\d+)/)?.[1] ?? '0', 10);
-  const cpMatch = line.match(/ score cp (-?\d+)/);
-  const mateMatch = line.match(/ score mate (-?\d+)/);
-  const pvMatch = line.match(/ pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
-  if (!pvMatch) return null;
-  return {
-    multipv: mpv,
-    cp: cpMatch ? parseInt(cpMatch[1], 10) : mateMatch ? (parseInt(mateMatch[1], 10) > 0 ? 30000 : -30000) : 0,
-    mate: mateMatch ? parseInt(mateMatch[1], 10) : null,
-    firstMoveUci: pvMatch[1],
-  };
+// Serialize engine work so concurrent requests never clash on the one worker.
+let chain: Promise<unknown> = Promise.resolve();
+function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  const next = chain.then(fn, fn);
+  chain = next.catch(() => {});
+  return next;
 }
 
-// Listen for analysis requests from background
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type !== 'stockfish-analyze') return false;
+async function analyze(msg: AnalyzeMsg): Promise<{ lines: RawLine[]; engine: EngineName }> {
+  // Cache hit → instant (only trust cached Stockfish results, not the weaker builtin).
+  const cached = await getCachedEval(msg.fen, msg.depth, msg.multipv);
+  if (cached && cached.engine === 'stockfish' && cached.lines.length) {
+    return { lines: cached.lines, engine: 'stockfish' };
+  }
 
-  const { fen, multipv, depth } = msg;
-
-  (async () => {
+  if (sfState === 'ready' && sfWorker) {
     try {
-      const w = await ensureWorker();
-
-      await sendCmd(w, 'isready', (l) => l.includes('readyok'), 10000);
-      await sendCmd(w, `setoption name MultiPV value ${multipv}`, () => true, 200).catch(() => {});
-      w.postMessage(`position fen ${fen}`);
-
-      const best = new Map<number, InfoLine>();
-      await sendCmd(
-        w,
-        `go depth ${depth} multipv ${multipv}`,
-        (l) => l.startsWith('bestmove'),
-        15000,
-        (line) => {
-          const info = parseInfo(line);
-          if (info) best.set(info.multipv, info);
-        },
-      );
-
-      const lines: Array<{ uci: string; cp: number; mate: number | null }> = [];
-      for (let i = 1; i <= multipv; i++) {
-        const info = best.get(i);
-        if (!info) continue;
-        lines.push({ uci: info.firstMoveUci, cp: info.cp, mate: info.mate });
-      }
-
-      sendResponse({ ok: true, lines });
-    } catch (e: any) {
-      console.error('[BoardGPT offscreen] Analysis failed:', e);
-      ready = false;
-      worker = null;
-      sendResponse({ ok: false, error: e?.message || String(e) });
+      const lines = await stockfishAnalyze(msg.fen, msg.multipv, msg.depth);
+      void putCachedEval(msg.fen, msg.depth, msg.multipv, {
+        lines,
+        engine: 'stockfish',
+        depth: msg.depth,
+        ts: Date.now(),
+      });
+      return { lines, engine: 'stockfish' };
+    } catch (e) {
+      console.warn('[BoardGPT offscreen] Stockfish analyze failed, falling back:', e);
+      sfState = 'idle'; // let it re-init next time
+      sfWorker = null;
     }
-  })();
+  } else {
+    // Warm Stockfish up in the background for subsequent moves.
+    startStockfish();
+  }
+  // Built-in engine runs HERE (offscreen thread), never on the page thread.
+  const lines = analyzePosition(msg.fen, msg.multipv, 2);
+  return { lines, engine: 'builtin' };
+}
 
-  return true; // Keep the message channel open for async response
-});
+// ─── Port wiring (with auto-reconnect if the service worker restarts) ────────
+function connect(): void {
+  let port: chrome.runtime.Port;
+  try {
+    port = chrome.runtime.connect({ name: PORT_NAME });
+  } catch {
+    setTimeout(connect, 1000);
+    return;
+  }
+  port.onMessage.addListener((msg: AnalyzeMsg) => {
+    if (msg?.type !== 'analyze') return;
+    runExclusive(() => analyze(msg))
+      .then((res) => port.postMessage({ requestId: msg.requestId, ok: true, ...res }))
+      .catch((e) => port.postMessage({ requestId: msg.requestId, ok: false, error: String(e?.message || e) }));
+  });
+  port.onDisconnect.addListener(() => {
+    // Service worker was suspended/restarted — reconnect shortly.
+    setTimeout(connect, 500);
+  });
+}
 
-// Signal that the offscreen document is ready
-chrome.runtime.sendMessage({ type: 'stockfish-offscreen-ready' }).catch(() => {});
+connect();
+// Kick off Stockfish init immediately so it's ready by the 1st or 2nd move.
+startStockfish();

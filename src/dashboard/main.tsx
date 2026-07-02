@@ -4,7 +4,27 @@ import { reviewGame } from '../engine/postgame';
 import type { GameReview, MoveQuality } from '../types';
 import { cpToBarFraction } from '../lib/evaluation';
 import { listGames, type StoredGame } from '../lib/games';
+import { captureFromReview } from '../lib/mistakeDB';
+import { MistakeClinic } from './MistakeClinic';
+import { RepertoireTrainer } from './RepertoireTrainer';
+import { Masterclass } from './Masterclass';
+import { Analytics } from './Analytics';
+import { StudyPlan } from './StudyPlan';
+import { GameHistory } from './GameHistory';
+import { LoginPage } from './LoginPage';
+import { PremiumPage } from './PremiumPage';
 import '../styles/tailwind.css';
+
+type Tab =
+  | 'review'
+  | 'clinic'
+  | 'trainer'
+  | 'courses'
+  | 'analytics'
+  | 'plan'
+  | 'history'
+  | 'account'
+  | 'premium';
 
 const SAMPLE_PGN = `[Event "Sample Game"]
 [White "You"]
@@ -47,6 +67,9 @@ function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [recent, setRecent] = useState<StoredGame[]>([]);
+  const [tab, setTab] = useState<Tab>('review');
+  const [myColor, setMyColor] = useState<'w' | 'b'>('w');
+  const [captured, setCaptured] = useState<number | null>(null);
 
   useEffect(() => {
     listGames().then(setRecent).catch(() => {});
@@ -55,10 +78,14 @@ function Dashboard() {
   function run() {
     setError(null);
     setBusy(true);
+    setCaptured(null);
     // Defer so the button shows a busy state before the sync analysis runs.
     setTimeout(() => {
       try {
-        setReview(reviewGame(pgn));
+        const rv = reviewGame(pgn);
+        setReview(rv);
+        // Feed the player's mistakes into the spaced-repetition clinic.
+        captureFromReview(rv, myColor).then((n) => setCaptured(n)).catch(() => {});
       } catch (e) {
         setError('Could not parse that PGN. ' + (e as Error).message);
       } finally {
@@ -67,13 +94,64 @@ function Dashboard() {
     }, 20);
   }
 
+  const TABS: { id: Tab; label: string }[] = [
+    { id: 'review', label: '📊 Review' },
+    { id: 'clinic', label: '🩺 Mistake Clinic' },
+    { id: 'trainer', label: '📖 Repertoire Trainer' },
+    { id: 'courses', label: '🎓 Masterclasses' },
+    { id: 'analytics', label: '📈 Analytics' },
+    { id: 'plan', label: '🗓️ Study Plan' },
+    { id: 'history', label: '🗂️ History' },
+    { id: 'account', label: '👤 Account' },
+    { id: 'premium', label: '⭐ Premium' },
+  ];
+
   return (
     <div className="min-h-screen bg-panel text-gray-100 font-sans">
       <div className="max-w-4xl mx-auto p-8">
-        <h1 className="text-lg font-bold text-accent mb-1">♟ Post-Game Analysis</h1>
+        <h1 className="text-lg font-bold text-accent mb-1">♟ BoardGPT Dashboard</h1>
+
+        <div className="flex gap-2 my-4 border-b border-gray-800">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-3 py-2 text-sm -mb-px border-b-2 ${
+                tab === t.id ? 'border-accent text-accent font-semibold' : 'border-transparent text-gray-400'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'clinic' && <MistakeClinic />}
+        {tab === 'trainer' && <RepertoireTrainer />}
+        {tab === 'courses' && <Masterclass />}
+        {tab === 'analytics' && <Analytics />}
+        {tab === 'plan' && <StudyPlan />}
+        {tab === 'history' && <GameHistory onOpen={(p) => { setPgn(p); setTab('review'); }} />}
+        {tab === 'account' && <LoginPage />}
+        {tab === 'premium' && <PremiumPage />}
+
+        {tab === 'review' && (
+        <>
         <p className="text-xs text-gray-500 mb-4">
           Paste a PGN and get per-move classification, accuracy and coaching (blueprint §8).
         </p>
+
+        <div className="mb-3 text-xs text-gray-400 flex items-center gap-2">
+          Your color for mistake capture:
+          <select
+            className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs"
+            value={myColor}
+            onChange={(e) => setMyColor(e.target.value as 'w' | 'b')}
+          >
+            <option value="w">White</option>
+            <option value="b">Black</option>
+          </select>
+          {captured !== null && <span className="text-accent">+{captured} mistake(s) saved to clinic</span>}
+        </div>
 
         {recent.length > 0 && (
           <div className="mb-4">
@@ -187,6 +265,8 @@ function Dashboard() {
               </div>
             </div>
           </div>
+        )}
+        </>
         )}
       </div>
     </div>

@@ -5,9 +5,11 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "build:nocheck": "vite build",
+    "postinstall": "node scripts/copy-stockfish.mjs",
+    "prebuild": "node scripts/copy-stockfish.mjs",
+    "dev": "node scripts/copy-stockfish.mjs && vite",
+    "build": "node scripts/copy-stockfish.mjs && tsc --noEmit && vite build",
+    "build:nocheck": "node scripts/copy-stockfish.mjs && vite build",
     "preview": "vite preview",
     "test": "node --import tsx --test test/engine.test.ts"
   },

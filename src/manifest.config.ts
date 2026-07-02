@@ -21,6 +21,11 @@ export default defineManifest({
     service_worker: 'src/background/service-worker.ts',
     type: 'module',
   },
+  // Required so the offscreen document can compile the Stockfish WASM binary.
+  // Without 'wasm-unsafe-eval' MV3 blocks WebAssembly.instantiate on extension pages.
+  content_security_policy: {
+    extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
+  },
   permissions: ['storage', 'activeTab', 'scripting', 'tabs', 'offscreen'],
   host_permissions: [
     'https://www.chess.com/*',

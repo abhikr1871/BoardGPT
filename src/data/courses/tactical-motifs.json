@@ -1,0 +1,26 @@
+{
+  "id": "tactical-motifs",
+  "title": "Core Tactical Motifs",
+  "steps": [
+    {
+      "title": "The Knight Fork",
+      "fen": "r3k3/8/8/1N6/8/8/8/4K3 w - - 0 1",
+      "point": "A fork attacks two pieces at once. Here Nc7+ is a 'royal fork': it checks the king on e8 and simultaneously attacks the rook on a8. The king must move, and you win the rook next move."
+    },
+    {
+      "title": "The Pin",
+      "fen": "4k3/8/8/8/1b6/8/3N4/3QK3 w - - 0 1",
+      "point": "A pin freezes a piece because moving it would expose something more valuable. Black's bishop on b4 pins White's knight on d2 to the king on e1 — the knight literally has no legal moves. Pinned pieces are weak; pile more attackers on them."
+    },
+    {
+      "title": "The Skewer",
+      "fen": "7r/6k1/8/8/8/8/1B6/K7 w - - 0 1",
+      "point": "A skewer is a reverse pin: the more valuable piece is in front. Bc3+ checks the king on g7 along the long diagonal; when the king steps aside, the rook on h8 is captured. Line up enemy pieces on the same line to skewer them."
+    },
+    {
+      "title": "The Fork in the opening",
+      "fen": "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 1",
+      "point": "Tactics hide in normal positions too. Watch the f7 square: it is defended only by the black king. Combinations built around a knight or bishop hitting f7 (the weakest square in the opening) win material or the king's safety — always calculate them."
+    }
+  ]
+}

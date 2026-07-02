@@ -7,9 +7,44 @@ import { loadSettings } from '../lib/storage';
 import { bandForCp } from '../lib/evaluation';
 import type { Settings } from '../types';
 import { useLiveGame, getSite, isLiveSite } from './useLiveGame';
-import { drawBestMoveArrow, clearArrow } from '../content/arrow';
+import { drawArrows, clearArrows, type ArrowSpec } from '../content/arrow';
 import { OpeningRecommender } from '../components/OpeningRecommender';
 import { getOpeningRecommendations } from '../engine/openings';
+import { DEFAULT_SETTINGS } from '../types';
+import type { AnalysisResult } from '../types';
+import { MiniPill } from '../components/MiniPill';
+import { SidebarIcons, type SidebarFeature } from '../components/SidebarIcons';
+import { getTheme } from '../lib/themes';
+
+interface FeatureFlags {
+  arrows: boolean;
+  coach: boolean;
+  evalBar: boolean;
+  openings: boolean;
+}
+
+const ARROW_GREEN = 'rgba(34,197,94,0.9)';
+const ARROW_BLUE = 'rgba(59,130,246,0.85)';
+const ARROW_RED = 'rgba(239,68,68,0.8)';
+
+/** Build the arrow set for a position given the user's toggles. */
+function arrowsFor(a: AnalysisResult, s: Settings, hoverUci?: string | null): ArrowSpec[] {
+  if (hoverUci) {
+    // Hovering a move card: show just that move, bright.
+    return [{ uci: hoverUci, color: ARROW_GREEN, widthFactor: 0.18, opacity: 0.95 }];
+  }
+  const specs: ArrowSpec[] = [];
+  if (s.showThreatArrow && a.threat?.uci) {
+    specs.push({ uci: a.threat.uci, color: ARROW_RED, widthFactor: 0.1, opacity: 0.45, dashed: true });
+  }
+  if (s.showAltArrow && a.moves[1]?.uci) {
+    specs.push({ uci: a.moves[1].uci, color: ARROW_BLUE, widthFactor: 0.12, opacity: 0.55 });
+  }
+  if (s.showBestArrow && a.moves[0]?.uci) {
+    specs.push({ uci: a.moves[0].uci, color: ARROW_GREEN, widthFactor: 0.16, opacity: 0.85 });
+  }
+  return specs;
+}
 
 const CORNER: Record<Settings['overlayPosition'], React.CSSProperties> = {
   'top-left':     { top: 8, left: 8 },
@@ -36,6 +71,12 @@ export function OverlayApp() {
   const [mode, setMode] = useState<'live' | 'manual'>(isLiveSite() ? 'live' : 'manual');
   const [liveEnabled, setLiveEnabled] = useState(true);
   const [width, setWidth] = useState(DEFAULT_W);
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [hoverUci, setHoverUci] = useState<string | null>(null);
+  const [miniMode, setMiniMode] = useState(false);
+  const [features, setFeatures] = useState<FeatureFlags>({
+    arrows: true, coach: true, evalBar: true, openings: true,
+  });
   const panelRef = useRef<HTMLDivElement>(null);
   const resizingRef = useRef(false);
   const resizeStartRef = useRef({ x: 0, startW: 0 });
@@ -44,8 +85,10 @@ export function OverlayApp() {
 
   useEffect(() => {
     loadSettings().then((s) => {
+      setSettings(s);
       setPos(CORNER[s.overlayPosition]);
       setLiveEnabled(s.liveAutoDetect);
+      setMiniMode(s.miniMode);
       if (isLiveSite() && s.liveAutoDetect) setMode('live');
     });
     const listener = (msg: { type?: string }) => {
@@ -55,15 +98,28 @@ export function OverlayApp() {
     return () => chrome.runtime?.onMessage?.removeListener(listener);
   }, []);
 
-  // Draw the best-move arrow on the board whenever live analysis updates.
+  // Draw all board arrows (best/alt/threat, or a single hovered move) on update.
   useEffect(() => {
-    if (mode === 'live' && live.analysis?.moves?.length) {
-      drawBestMoveArrow(live.analysis.moves[0].uci);
+    if (mode === 'live' && features.arrows && live.analysis?.moves?.length) {
+      drawArrows(arrowsFor(live.analysis, settings, hoverUci));
     } else {
-      clearArrow();
+      clearArrows();
     }
-    return () => clearArrow();
-  }, [mode, live.analysis]);
+    return () => clearArrows();
+  }, [mode, live.analysis, settings, hoverUci, features.arrows]);
+
+  const openOptions = () =>
+    chrome.tabs?.create
+      ? chrome.tabs.create({ url: chrome.runtime.getURL('src/options/index.html') })
+      : window.open(chrome.runtime.getURL('src/options/index.html'));
+
+  const onSidebarToggle = (f: SidebarFeature) => {
+    if (f === 'settings') return openOptions();
+    if (f === 'arrows') return setFeatures((v) => ({ ...v, arrows: !v.arrows }));
+    if (f === 'coach') return setFeatures((v) => ({ ...v, coach: !v.coach }));
+    if (f === 'eval') return setFeatures((v) => ({ ...v, evalBar: !v.evalBar }));
+    if (f === 'openings') return setFeatures((v) => ({ ...v, openings: !v.openings }));
+  };
 
   // Drag to move panel
   useEffect(() => {
@@ -106,6 +162,17 @@ export function OverlayApp() {
   const a = live.analysis;
   const whiteCp = a ? Math.round(a.evaluation * 100) : 0;
   const band = bandForCp(whiteCp);
+  const theme = getTheme(settings.theme);
+
+  // Compact mini-mode: a tiny floating pill + the sidebar icons.
+  if (miniMode) {
+    return (
+      <>
+        <MiniPill analysis={a} onExpand={() => setMiniMode(false)} />
+        {showLiveTab() && <SidebarIcons onToggle={onSidebarToggle} active={features as any} />}
+      </>
+    );
+  }
 
   return (
     <div
@@ -113,6 +180,7 @@ export function OverlayApp() {
       className="fixed z-[2147483647] font-sans"
       style={{ ...pos, width }}
     >
+      {showLiveTab() && <SidebarIcons onToggle={onSidebarToggle} active={features as any} />}
       {/* Left resize handle */}
       <div
         onMouseDown={onResizeMouseDown}
@@ -139,8 +207,8 @@ export function OverlayApp() {
           marginLeft: 6,
           borderRadius: 14,
           overflow: 'hidden',
-          boxShadow: '0 8px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(34,197,94,0.18)',
-          background: 'linear-gradient(160deg, #0f1923 0%, #111827 60%, #0d1520 100%)',
+          boxShadow: `0 8px 40px rgba(0,0,0,0.7), 0 0 0 1px ${theme.accent}30`,
+          background: theme.panelBg,
           backdropFilter: 'blur(16px)',
           border: '1px solid rgba(255,255,255,0.07)',
         }}
@@ -195,6 +263,19 @@ export function OverlayApp() {
             </span>
 
             <button
+              title="Mini mode"
+              onClick={() => setMiniMode(true)}
+              style={{
+                background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer',
+                fontSize: 13, padding: '2px 5px', borderRadius: 4, lineHeight: 1,
+              }}
+              onMouseEnter={e => (e.currentTarget.style.color = '#22c55e')}
+              onMouseLeave={e => (e.currentTarget.style.color = '#6b7280')}
+            >
+              ▬
+            </button>
+
+            <button
               title={collapsed ? 'Expand' : 'Collapse'}
               onClick={() => setCollapsed((c) => !c)}
               style={{
@@ -242,7 +323,7 @@ export function OverlayApp() {
             className="chessai-scroll overflow-y-auto"
             style={{ padding: '10px 12px 12px', maxHeight: '92vh', overflowY: 'auto' }}
           >
-            {/* Mode switcher (Chess.com only) */}
+            {/* Mode switcher (all supported live sites) */}
             {showLiveTab() && (
               <div
                 style={{
@@ -294,6 +375,9 @@ export function OverlayApp() {
                 turn={live.update?.turn ?? null}
                 whiteCp={whiteCp}
                 fen={live.update?.fen ?? null}
+                site={getSite()}
+                onHoverMove={setHoverUci}
+                features={features}
               />
             )}
 
@@ -346,6 +430,9 @@ function LiveView({
   turn,
   whiteCp,
   fen,
+  site,
+  onHoverMove,
+  features,
 }: {
   status: ReturnType<typeof useLiveGame>['status'];
   analyzing: boolean;
@@ -356,7 +443,12 @@ function LiveView({
   turn: 'w' | 'b' | null;
   whiteCp: number;
   fen?: string | null;
+  site?: string;
+  onHoverMove?: (uci: string | null) => void;
+  features?: FeatureFlags;
 }) {
+  const show = features ?? { arrows: true, coach: true, evalBar: true, openings: true };
+  const siteLabel = site && site !== 'other' ? site : 'chess';
   if (status === 'no-board' || status === 'idle') {
     return (
       <div
@@ -369,7 +461,7 @@ function LiveView({
       >
         <div style={{ fontSize: 28, marginBottom: 8 }}>👀</div>
         <div style={{ fontWeight: 600, color: '#9ca3af', marginBottom: 4 }}>
-          Looking for your Chess.com board…
+          Looking for your {siteLabel} board…
         </div>
         <div style={{ fontSize: 11, lineHeight: 1.5 }}>
           Open or start a game on Chess.com, Lichess, or Chess24. BoardGPT watches the board and suggests moves automatically.
@@ -442,7 +534,7 @@ function LiveView({
         </div>
       )}
 
-      {openingRec && <OpeningRecommender recommender={openingRec} />}
+      {show.openings && openingRec && <OpeningRecommender recommender={openingRec} />}
 
       {analyzing && !a && (
         <div style={{ textAlign: 'center', padding: '16px 0', color: '#6b7280', fontSize: 12 }}>
@@ -452,10 +544,16 @@ function LiveView({
 
       {a && (
         <div style={{ display: 'flex', gap: 10 }}>
-          <EvalBar cp={whiteCp} />
+          {show.evalBar && <EvalBar cp={whiteCp} />}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
             {a.moves.map((m) => (
-              <MoveCard key={m.uci} line={m} turn={a.turn} />
+              <div
+                key={m.uci}
+                onMouseEnter={() => onHoverMove?.(m.uci)}
+                onMouseLeave={() => onHoverMove?.(null)}
+              >
+                <MoveCard line={m} turn={a.turn} />
+              </div>
             ))}
             <div style={{ fontSize: 10, color: '#4b5563', marginTop: 2 }}>
               engine: {a.engine} · {a.latencyMs} ms{analyzing ? ' · updating…' : ''}
@@ -465,7 +563,7 @@ function LiveView({
       )}
 
       {/* AI Coach Assistant */}
-      {a && (
+      {a && show.coach && (
         <CoachAssistant
           analysis={a}
           lastMove={lastMove}

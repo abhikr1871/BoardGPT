@@ -29,6 +29,11 @@ export interface AnalysisResult {
   moves: EngineLine[];
   latencyMs: number;
   engine: 'stockfish' | 'builtin';
+  /**
+   * Opponent's strongest threat if it were their move now (null-move heuristic).
+   * uci is from the opponent's perspective; used for the red dashed arrow.
+   */
+  threat?: { uci: string; san: string; cp: number; mate: number | null } | null;
 }
 
 /** Post-game move classification symbols (blueprint §8). */
@@ -81,6 +86,18 @@ export interface Settings {
   apiBaseUrl: string;
   /** Optional bearer/JWT for the backend. */
   apiToken: string;
+  /** Board arrow toggles (blueprint Phase 2 multi-arrow). */
+  showBestArrow: boolean;
+  showAltArrow: boolean;
+  showThreatArrow: boolean;
+  /** Overlay colour theme id (Phase 4). */
+  theme: string;
+  /** Collapse the overlay to a compact floating pill (Phase 4). */
+  miniMode: boolean;
+  /** Real-time blunder-prevention hover shield (Phase 4). */
+  blunderShield: boolean;
+  /** Subscription plan (Phase 5). Free unless upgraded. */
+  plan: 'free' | 'premium';
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -95,6 +112,13 @@ export const DEFAULT_SETTINGS: Settings = {
   liveAutoDetect: true,
   apiBaseUrl: '',
   apiToken: '',
+  showBestArrow: true,
+  showAltArrow: true,
+  showThreatArrow: true,
+  theme: 'midnight',
+  miniMode: false,
+  blunderShield: true,
+  plan: 'free',
 };
 
 /** A recorded game payload sent to the backend. */

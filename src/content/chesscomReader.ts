@@ -25,6 +25,12 @@ export interface BoardSnapshot {
   placement: string;
   /** true if the board is shown from Black's side (player is Black). */
   flipped: boolean;
+  /**
+   * Full authoritative FEN (with side-to-move, castling, en passant) when the
+   * page exposes it. Preferred over placement scanning because it gives an
+   * exact turn — eliminating turn-guess errors.
+   */
+  fen?: string;
 }
 
 export function findBoard(): Element | null {
@@ -33,6 +39,33 @@ export function findBoard(): Element | null {
     if (el && el.querySelector('.piece, [class*="piece"]')) return el;
   }
   return null;
+}
+
+/**
+ * Read the exact FEN from Chess.com's board web component if available.
+ * <wc-chess-board> exposes a `game` object with getFEN(); some pages also carry
+ * a data-fen attribute. Returns a validated full FEN, or null.
+ */
+export function readFenFromDom(board: Element | null = findBoard()): string | null {
+  if (!board) return null;
+  try {
+    const game = (board as any).game;
+    const fen = game?.getFEN?.() ?? game?.getFen?.();
+    if (typeof fen === 'string' && isValidFullFen(fen)) return fen;
+  } catch {
+    // component API not available on this page/version
+  }
+  const attr =
+    board.getAttribute('data-fen') ?? board.getAttribute('fen') ?? board.getAttribute('data-position');
+  if (attr && isValidFullFen(attr)) return attr;
+  return null;
+}
+
+function isValidFullFen(fen: string): boolean {
+  const parts = fen.trim().split(/\s+/);
+  if (parts.length < 2) return false;
+  if (parts[1] !== 'w' && parts[1] !== 'b') return false;
+  return parts[0].split('/').length === 8;
 }
 
 /** Read the current piece placement from the Chess.com board, or null. */
@@ -80,7 +113,9 @@ export function readPlacement(board: Element | null = findBoard()): BoardSnapsho
     .join('/');
 
   const flipped = board.classList.contains('flipped');
-  return { placement, flipped };
+  // Prefer the exact FEN from the component when present (authoritative turn).
+  const domFen = readFenFromDom(board);
+  return { placement, flipped, fen: domFen ?? undefined };
 }
 
 /** Whose turn Chess.com's active clock indicates, if we can tell. */
@@ -194,15 +229,28 @@ export class GameTracker {
     if (snap.placement === this.lastPlacement) return null;
     this.lastPlacement = snap.placement;
 
-    // Try to find the single legal move that yields this placement.
-    const move = this.findMatchingMove(snap.placement);
+    // Authoritative turn from the page's own FEN when present, else the clock.
+    const domTurn = snap.fen ? (snap.fen.trim().split(/\s+/)[1] as 'w' | 'b') : null;
+    const targetTurn = domTurn ?? clockTurn ?? null;
+
+    // Try to find the single legal move that yields this placement (and, when we
+    // know it, the correct resulting side-to-move). Keeps SAN/PGN continuity.
+    const move = this.findMatchingMove(snap.placement, targetTurn);
     if (move) {
       this.chess.move(move);
       return this.snapshot(move.san, false);
     }
 
-    // Resync: rebuild from placement using best turn guess.
-    const turn = clockTurn ?? this.guessTurnFromPlacement(snap.placement, snap.flipped);
+    // Resync. Prefer the exact page FEN (correct turn + castling + en passant).
+    if (snap.fen) {
+      try {
+        this.chess = new Chess(snap.fen);
+        return this.snapshot(null, true);
+      } catch {
+        // fall through to placement-based rebuild
+      }
+    }
+    const turn = targetTurn ?? this.guessTurnFromPlacement(snap.placement, snap.flipped);
     const fen = buildFen(snap.placement, turn);
     try {
       this.chess = new Chess(fen);
@@ -223,13 +271,14 @@ export class GameTracker {
     };
   }
 
-  private findMatchingMove(targetPlacement: string) {
+  private findMatchingMove(targetPlacement: string, targetTurn: 'w' | 'b' | null) {
     const legal = this.chess.moves({ verbose: true });
     for (const m of legal) {
       this.chess.move(m);
       const placement = this.chess.fen().split(' ')[0];
+      const turn = this.chess.turn();
       this.chess.undo();
-      if (placement === targetPlacement) return m;
+      if (placement === targetPlacement && (!targetTurn || turn === targetTurn)) return m;
     }
     return null;
   }

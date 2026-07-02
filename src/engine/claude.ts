@@ -24,6 +24,16 @@ export async function explainMoves(
 ): Promise<EngineLine[]> {
   if (settings.verbosity === 'off' || moves.length === 0) return moves;
 
+  // Tier 0 — on-device Chrome built-in AI (Gemini Nano). Free, private and
+  // offline. Tried first; falls through silently when the API isn't present.
+  try {
+    const nano = await explainWithGeminiNano(fen, moves, settings);
+    if (nano) return nano;
+  } catch (e) {
+    console.warn('[ChessAI] Gemini Nano unavailable, trying next tier:', e);
+  }
+
+  // Tier 1 — Anthropic Claude (when an API key is configured).
   if (settings.anthropicApiKey) {
     try {
       return await explainWithClaude(fen, moves, pgnMoves, settings);
@@ -31,7 +41,70 @@ export async function explainMoves(
       console.warn('[ChessAI] Claude call failed, using heuristic:', e);
     }
   }
+
+  // Tier 2 — rule-based heuristic (always available).
   return moves.map((m) => ({ ...m, explanation: heuristicExplanation(fen, m) }));
+}
+
+/**
+ * Tier 0 explainer using Chrome's built-in on-device model (Gemini Nano) via
+ * the Prompt API (`self.ai.languageModel`). Returns explanations for every move,
+ * or null when the API is unavailable / not yet downloaded so callers can fall
+ * back. Best-effort and defensive — never throws for missing capabilities.
+ */
+export async function explainWithGeminiNano(
+  fen: string,
+  moves: EngineLine[],
+  settings: Settings,
+): Promise<EngineLine[] | null> {
+  const ai = (self as any).ai;
+  if (!('ai' in self) || !ai?.languageModel) return null;
+
+  // Only proceed when the model is actually usable on this device.
+  try {
+    const caps = await ai.languageModel.capabilities?.();
+    if (caps && caps.available === 'no') return null;
+  } catch {
+    // Older builds may not expose capabilities(); attempt creation anyway.
+  }
+
+  let session: any;
+  try {
+    session = await ai.languageModel.create({ systemPrompt: SYSTEM_PROMPT });
+  } catch {
+    return null;
+  }
+
+  try {
+    const chess = new Chess(fen);
+    const color = chess.turn() === 'w' ? 'White' : 'Black';
+    const detail = settings.verbosity === 'detailed' ? '3-4' : '2';
+    const moveList = moves
+      .map((m, i) => `${i + 1}. ${m.san} (eval: ${m.cp} centipawns)`)
+      .join('\n');
+
+    const prompt =
+      `Position (FEN): ${fen}\n` +
+      `Current player: ${color}\n\n` +
+      `Engine top moves:\n${moveList}\n\n` +
+      `Explain each move in ${detail} sentences. ` +
+      `Return one line per move in the form "SAN: explanation".`;
+
+    const text: string = await session.prompt(prompt);
+    const perMove = parseExplanations(text ?? '', moves);
+    return moves.map((m, i) => ({
+      ...m,
+      explanation: perMove[i] ?? heuristicExplanation(fen, m),
+    }));
+  } catch {
+    return null;
+  } finally {
+    try {
+      session?.destroy?.();
+    } catch {
+      // ignore cleanup errors
+    }
+  }
 }
 
 async function explainWithClaude(

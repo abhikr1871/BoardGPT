@@ -10,6 +10,7 @@ import {
   readGameResult,
   GameTracker,
   type TrackerUpdate,
+  type BoardSnapshot,
 } from '../content/chesscomReader';
 import {
   findLichessBoard,
@@ -24,6 +25,8 @@ import {
   readChess24GameResult,
 } from '../content/chess24Reader';
 import { recordGame } from '../lib/games';
+import { reviewGame } from '../engine/postgame';
+import { captureFromReview } from '../lib/mistakeDB';
 
 export type LiveStatus = 'idle' | 'no-board' | 'watching';
 
@@ -52,7 +55,7 @@ export function isLiveSite(): boolean {
 // ─── Unified board reader ──────────────────────────────────────────────────────
 interface SiteReader {
   findBoard: () => Element | null;
-  readPlacement: (b: Element | null) => { placement: string; flipped: boolean } | null;
+  readPlacement: (b: Element | null) => BoardSnapshot | null;
   readClockTurn: () => 'w' | 'b' | null;
   readGameResult: () => string | null;
   source: string;
@@ -154,6 +157,17 @@ export function useLiveGame(enabled: boolean): LiveState {
         try {
           await recordGame({ pgn, result, source: reader.source });
           setState((s) => (s.recorded ? s : { ...s, recorded: true }));
+          // Populate the mistake clinic from this game (deferred, off the hot path).
+          if (pgn) {
+            const myColor = snap.flipped ? 'b' : 'w';
+            setTimeout(() => {
+              try {
+                captureFromReview(reviewGame(pgn), myColor).catch(() => {});
+              } catch {
+                /* review can fail on odd PGNs — ignore */
+              }
+            }, 100);
+          }
         } catch (e) {
           console.warn('[BoardGPT] recordGame failed', e);
         }
@@ -165,7 +179,7 @@ export function useLiveGame(enabled: boolean): LiveState {
       setState((s) => ({ ...s, analyzing: true }));
       try {
         const s = settingsRef.current ?? (await loadSettings());
-        const res = await analyze(upd.fen, s.depth, s.movesShown);
+        const res = await analyze(upd.fen, s.depth, s.movesShown, s.showThreatArrow);
         const moves = await explainMoves(upd.fen, res.moves, upd.pgn, s);
         setState((prev) => ({ ...prev, analysis: { ...res, moves }, analyzing: false }));
       } catch (e) {

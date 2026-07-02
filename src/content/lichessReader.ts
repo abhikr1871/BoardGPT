@@ -43,7 +43,9 @@ export function readLichessPlacement(board: Element | null = findLichessBoard())
       const flipped = board.closest('cg-wrap')?.querySelector('cg-board')
         ? (board.closest('cg-container')?.classList.contains('orientation-black') ?? false)
         : false;
-      return { placement: fen.split(' ')[0], flipped };
+      // Include the full FEN when it carries a side-to-move field (authoritative turn).
+      const full = fen.trim().split(/\s+/).length >= 2 ? fen.trim() : undefined;
+      return { placement: fen.split(' ')[0], flipped, fen: full };
     }
   }
 

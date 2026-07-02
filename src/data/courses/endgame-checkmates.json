@@ -1,0 +1,31 @@
+{
+  "id": "endgame-checkmates",
+  "title": "Basic Checkmates",
+  "steps": [
+    {
+      "title": "The Queen box-in",
+      "fen": "8/8/8/4k3/8/8/4Q3/4K3 w - - 0 1",
+      "point": "With King + Queen vs a lone King, never rush. Use the queen a knight's-move away from the enemy king to shrink its box without stalemating, and walk your own king up to help."
+    },
+    {
+      "title": "Queen + King checkmate",
+      "fen": "4k3/4Q3/4K3/8/8/8/8/8 b - - 0 1",
+      "point": "This is the goal: the queen delivers mate on the back rank while your king guards every escape square. The defending king has no legal move — that is checkmate, not stalemate."
+    },
+    {
+      "title": "The back-rank mate",
+      "fen": "6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1",
+      "point": "A king trapped behind its own unmoved pawns is vulnerable. Play Ra8+ and it is instant mate — the f7/g7/h7 pawns block every escape. Always give your own king luft (h3/g3) to avoid this."
+    },
+    {
+      "title": "The rook ladder (staircase)",
+      "fen": "8/8/8/4k3/8/8/8/R3K3 w - - 0 1",
+      "point": "King + Rook vs King is won by 'ladder mate'. Use the rook to build a wall one rank/file at a time and drive the enemy king to the edge, then bring your king up to deliver mate."
+    },
+    {
+      "title": "Two-rook 'lawnmower' mate",
+      "fen": "4k3/8/8/8/8/8/R7/1R2K3 w - - 0 1",
+      "point": "Two rooks mate a lone king without help from your own king. Check with one rook to push the king back a rank, then swing the other rook over — the rooks 'mow' the king to the edge and mate."
+    }
+  ]
+}
