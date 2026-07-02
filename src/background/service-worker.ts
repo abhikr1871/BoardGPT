@@ -2,10 +2,8 @@ import { loadSettings, saveSettings } from '../lib/storage';
 import type { WorkerRequest, WorkerResponse } from '../types';
 
 /**
- * Background service worker (MV3). Kept intentionally light: it owns settings
- * persistence and the toggle-overlay keyboard command. Heavy engine work runs
- * in the page context (overlay) because MV3 service workers can't spawn the
- * Stockfish sub-worker or touch the DOM.
+ * Background service worker (MV3). Handles settings, keyboard commands,
+ * and the Stockfish offscreen document lifecycle.
  */
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -21,15 +19,75 @@ chrome.commands?.onCommand.addListener(async (command) => {
   }
 });
 
+// ── Offscreen document management for Stockfish ──────────────────────
+
+let offscreenCreating: Promise<void> | null = null;
+
+async function ensureOffscreen(): Promise<void> {
+  // @ts-ignore — chrome.offscreen types may not be in older @types/chrome
+  if (typeof chrome.offscreen === 'undefined') {
+    throw new Error('chrome.offscreen API not available');
+  }
+
+  // Check if already exists
+  // @ts-ignore
+  const existing = await chrome.offscreen.hasDocument?.().catch(() => false);
+  if (existing) return;
+
+  if (offscreenCreating) {
+    await offscreenCreating;
+    return;
+  }
+
+  offscreenCreating = (async () => {
+    try {
+      // @ts-ignore
+      await chrome.offscreen.createDocument({
+        url: 'src/offscreen/offscreen.html',
+        reasons: ['WORKERS'],
+        justification: 'Run Stockfish WASM chess engine in a Web Worker',
+      });
+      console.log('[BoardGPT] Offscreen document created for Stockfish');
+    } finally {
+      offscreenCreating = null;
+    }
+  })();
+
+  await offscreenCreating;
+}
+
+// ── Message handler ──────────────────────────────────────────────────
+
 chrome.runtime.onMessage.addListener(
-  (req: WorkerRequest, _sender, sendResponse: (r: WorkerResponse) => void) => {
+  (req: any, sender, sendResponse: (r: any) => void) => {
+    // Stockfish analysis request from content script → relay to offscreen
+    if (req.type === 'stockfish-analyze') {
+      (async () => {
+        try {
+          await ensureOffscreen();
+          // Forward the request; the offscreen doc will respond
+          const result = await chrome.runtime.sendMessage(req);
+          sendResponse(result);
+        } catch (e: any) {
+          console.warn('[BoardGPT] offscreen relay failed:', e);
+          sendResponse({ ok: false, error: e?.message || String(e) });
+        }
+      })();
+      return true;
+    }
+
+    // Ignore offscreen-ready signal
+    if (req.type === 'stockfish-offscreen-ready') return false;
+
+    // Original settings / game saving logic
+    const typedReq = req as WorkerRequest;
     (async () => {
       try {
-        if (req.type === 'GET_SETTINGS') {
+        if (typedReq.type === 'GET_SETTINGS') {
           sendResponse({ type: 'SETTINGS', settings: await loadSettings() });
-        } else if (req.type === 'SAVE_SETTINGS') {
-          sendResponse({ type: 'SETTINGS', settings: await saveSettings(req.settings) });
-        } else if (req.type === 'SAVE_GAME') {
+        } else if (typedReq.type === 'SAVE_SETTINGS') {
+          sendResponse({ type: 'SETTINGS', settings: await saveSettings(typedReq.settings) });
+        } else if (typedReq.type === 'SAVE_GAME') {
           const settings = await loadSettings();
           if (!settings.apiBaseUrl) {
             sendResponse({ type: 'ERROR', message: 'No backend configured' });
@@ -41,13 +99,13 @@ chrome.runtime.onMessage.addListener(
               'content-type': 'application/json',
               ...(settings.apiToken ? { authorization: `Bearer ${settings.apiToken}` } : {}),
             },
-            body: JSON.stringify(req.game),
+            body: JSON.stringify(typedReq.game),
           });
           if (!res.ok) throw new Error(`backend ${res.status}`);
           const data = await res.json().catch(() => ({}));
-          sendResponse({ type: 'GAME_SAVED', id: req.game.id, serverId: data?.id });
+          sendResponse({ type: 'GAME_SAVED', id: typedReq.game.id, serverId: data?.id });
         } else {
-          sendResponse({ type: 'ERROR', message: `Unhandled request: ${req.type}` });
+          sendResponse({ type: 'ERROR', message: `Unhandled request: ${typedReq.type}` });
         }
       } catch (e) {
         sendResponse({ type: 'ERROR', message: (e as Error).message });
@@ -56,3 +114,4 @@ chrome.runtime.onMessage.addListener(
     return true; // async response
   },
 );
+

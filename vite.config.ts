@@ -12,6 +12,7 @@ export default defineConfig({
         popup: 'src/popup/index.html',
         options: 'src/options/index.html',
         dashboard: 'src/dashboard/index.html',
+        offscreen: 'src/offscreen/offscreen.html',
       },
     },
   },

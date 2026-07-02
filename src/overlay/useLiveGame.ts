@@ -127,12 +127,12 @@ export function useLiveGame(enabled: boolean): LiveState {
     const processPosition = async () => {
       const board = reader.findBoard();
       if (!board) {
-        setState((s) => ({ ...s, status: 'no-board' }));
+        setState((s) => (s.status === 'no-board' ? s : { ...s, status: 'no-board' }));
         return;
       }
       const snap = reader.readPlacement(board);
       if (!snap) {
-        setState((s) => ({ ...s, status: 'no-board' }));
+        setState((s) => (s.status === 'no-board' ? s : { ...s, status: 'no-board' }));
         return;
       }
 
@@ -141,7 +141,7 @@ export function useLiveGame(enabled: boolean): LiveState {
         setState((s) => ({ ...s, status: 'watching', update: upd }));
         if (!analyzingRef.current) void runAnalysis(upd);
       } else {
-        setState((s) => ({ ...s, status: 'watching' }));
+        setState((s) => (s.status === 'watching' ? s : { ...s, status: 'watching' }));
       }
 
       // Game-over detection → record once.
@@ -153,7 +153,7 @@ export function useLiveGame(enabled: boolean): LiveState {
           : '';
         try {
           await recordGame({ pgn, result, source: reader.source });
-          setState((s) => ({ ...s, recorded: true }));
+          setState((s) => (s.recorded ? s : { ...s, recorded: true }));
         } catch (e) {
           console.warn('[BoardGPT] recordGame failed', e);
         }
@@ -179,7 +179,11 @@ export function useLiveGame(enabled: boolean): LiveState {
     const board = reader.findBoard();
     if (board) {
       observer = new MutationObserver(handleChange);
-      observer.observe(board, { attributes: true, childList: true, subtree: true });
+      observer.observe(board, {
+        childList: true,
+        subtree: true,
+        attributeFilter: ['class', 'style', 'data-fen', 'fen', 'data-position'],
+      });
       // Also observe parent for Lichess (cg-board may be replaced)
       const parent = board.parentElement;
       if (parent && parent !== board) {
@@ -187,7 +191,7 @@ export function useLiveGame(enabled: boolean): LiveState {
       }
       processPosition();
     } else {
-      setState((s) => ({ ...s, status: 'no-board' }));
+      setState((s) => (s.status === 'no-board' ? s : { ...s, status: 'no-board' }));
     }
 
     // Poll as safety net for late-mounting boards (especially Lichess SPA navigation)
@@ -195,7 +199,11 @@ export function useLiveGame(enabled: boolean): LiveState {
       const b = reader.findBoard();
       if (b && !observer) {
         observer = new MutationObserver(handleChange);
-        observer.observe(b, { attributes: true, childList: true, subtree: true });
+        observer.observe(b, {
+          childList: true,
+          subtree: true,
+          attributeFilter: ['class', 'style', 'data-fen', 'fen', 'data-position'],
+        });
         processPosition();
       } else if (b) {
         // Re-check position even if observer exists (covers data-fen updates)

@@ -66,10 +66,9 @@ export async function analyze(
   };
 }
 
-// The built-in engine measures search in plies; map a UCI "depth" onto a small,
-// fast ply budget so the demo stays responsive.
-function depthToPlies(depth: number): number {
-  if (depth <= 12) return 2;
-  if (depth <= 18) return 3;
-  return 4;
+// The built-in engine measures search in plies; keep it at 2 plies so the
+// synchronous calculation completes in ~200ms and never freezes the browser.
+// Quiescence search adds tactical depth on top of this.
+function depthToPlies(_depth: number): number {
+  return 2;
 }

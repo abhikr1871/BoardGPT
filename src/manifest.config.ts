@@ -21,7 +21,7 @@ export default defineManifest({
     service_worker: 'src/background/service-worker.ts',
     type: 'module',
   },
-  permissions: ['storage', 'activeTab', 'scripting', 'tabs'],
+  permissions: ['storage', 'activeTab', 'scripting', 'tabs', 'offscreen'],
   host_permissions: [
     'https://www.chess.com/*',
     'https://lichess.org/*',
@@ -50,7 +50,7 @@ export default defineManifest({
   },
   web_accessible_resources: [
     {
-      resources: ['assets/*', 'icons/*', 'stockfish/*'],
+      resources: ['assets/*', 'icons/*', 'stockfish/*', 'src/offscreen/offscreen.html'],
       matches: ['<all_urls>'],
     },
   ],

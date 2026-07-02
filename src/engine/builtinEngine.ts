@@ -115,13 +115,34 @@ function evaluateBoard(chess: Chess): number {
   return score;
 }
 
+/** Quiescence search to resolve captures before evaluating. Limited to 3 plies to prevent UI freezing. */
+function quiescence(chess: Chess, alpha: number, beta: number, qDepth = 0): number {
+  const standPat = evaluateBoard(chess);
+  const standPatPov = chess.turn() === 'w' ? standPat : -standPat;
+  if (standPatPov >= beta) return beta;
+  if (alpha < standPatPov) alpha = standPatPov;
+  if (qDepth >= 2) return alpha; // Hard recursion cutoff to prevent browser freezing
+
+  // Only check captures in quiescence, NOT non-capturing checks which cause combinatorial explosion
+  const captures = chess.moves({ verbose: true }).filter((m) => m.captured);
+  captures.sort((a, b) => (b.captured ? PIECE_VALUE[b.captured as keyof typeof PIECE_VALUE] || 0 : 0) - (a.captured ? PIECE_VALUE[a.captured as keyof typeof PIECE_VALUE] || 0 : 0));
+
+  for (const m of captures) {
+    chess.move(m);
+    const score = -quiescence(chess, -beta, -alpha, qDepth + 1);
+    chess.undo();
+    if (score >= beta) return beta;
+    if (score > alpha) alpha = score;
+  }
+  return alpha;
+}
+
 /** Negamax with alpha-beta. Returns score from side-to-move POV. */
 function negamax(chess: Chess, depth: number, alpha: number, beta: number): number {
   if (chess.isCheckmate()) return -MATE - depth; // prefer faster mates
   if (chess.isDraw() || chess.isStalemate() || chess.isThreefoldRepetition()) return 0;
   if (depth === 0) {
-    const white = evaluateBoard(chess);
-    return chess.turn() === 'w' ? white : -white;
+    return quiescence(chess, alpha, beta, 0);
   }
 
   const moves = chess.moves({ verbose: true });
@@ -142,14 +163,15 @@ function negamax(chess: Chess, depth: number, alpha: number, beta: number): numb
 
 /**
  * Rank the top `multipv` root moves. `plies` controls search depth; kept small
- * (default 3) so the whole call stays well under the blueprint's latency goals.
+ * (default 2) so the synchronous call stays under 300ms and never freezes the browser.
+ * Quiescence search adds tactical depth (captures) on top of this.
  */
-export function analyzePosition(fen: string, multipv = 3, plies = 3): RawLine[] {
+export function analyzePosition(fen: string, multipv = 3, plies = 2): RawLine[] {
   const chess = new Chess(fen);
   const rootMoves = chess.moves({ verbose: true });
   if (rootMoves.length === 0) return [];
 
-  const searchDepth = Math.max(1, Math.min(4, plies));
+  const searchDepth = Math.max(1, Math.min(3, plies));
   const scored: RawLine[] = rootMoves.map((m) => {
     chess.move(m);
     // Negate: child is evaluated from opponent POV.

@@ -8,6 +8,8 @@ import { bandForCp } from '../lib/evaluation';
 import type { Settings } from '../types';
 import { useLiveGame, getSite, isLiveSite } from './useLiveGame';
 import { drawBestMoveArrow, clearArrow } from '../content/arrow';
+import { OpeningRecommender } from '../components/OpeningRecommender';
+import { getOpeningRecommendations } from '../engine/openings';
 
 const CORNER: Record<Settings['overlayPosition'], React.CSSProperties> = {
   'top-left':     { top: 8, left: 8 },
@@ -291,6 +293,7 @@ export function OverlayApp() {
                 lastMove={live.update?.lastMoveSan ?? null}
                 turn={live.update?.turn ?? null}
                 whiteCp={whiteCp}
+                fen={live.update?.fen ?? null}
               />
             )}
 
@@ -342,6 +345,7 @@ function LiveView({
   lastMove,
   turn,
   whiteCp,
+  fen,
 }: {
   status: ReturnType<typeof useLiveGame>['status'];
   analyzing: boolean;
@@ -351,6 +355,7 @@ function LiveView({
   lastMove: string | null;
   turn: 'w' | 'b' | null;
   whiteCp: number;
+  fen?: string | null;
 }) {
   if (status === 'no-board' || status === 'idle') {
     return (
@@ -372,6 +377,8 @@ function LiveView({
       </div>
     );
   }
+
+  const openingRec = fen ? getOpeningRecommendations(fen) : null;
 
   return (
     <div>
@@ -403,10 +410,26 @@ function LiveView({
           Watching · {turn === 'w' ? '⬜ White' : turn === 'b' ? '⬛ Black' : '—'} to move
         </span>
         {a && (
-          <span style={{ fontWeight: 700, color: band.color, fontSize: 12 }}>
-            {band.label} {a.evaluation >= 0 ? '+' : ''}
-            {a.evaluation.toFixed(1)}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                padding: '2px 5px',
+                borderRadius: 4,
+                background: a.engine === 'stockfish' ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)',
+                color: a.engine === 'stockfish' ? '#4ade80' : '#fbbf24',
+                border: `1px solid ${a.engine === 'stockfish' ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
+              }}
+              title={a.engine === 'stockfish' ? 'Stockfish 16 WASM active' : 'Fallback JS engine active'}
+            >
+              {a.engine === 'stockfish' ? '⚡ Stockfish 16' : '⚠️ Backup JS'}
+            </span>
+            <span style={{ fontWeight: 700, color: band.color, fontSize: 12 }}>
+              {band.label} {a.evaluation >= 0 ? '+' : ''}
+              {a.evaluation.toFixed(1)}
+            </span>
+          </div>
         )}
       </div>
 
@@ -418,6 +441,8 @@ function LiveView({
           </span>
         </div>
       )}
+
+      {openingRec && <OpeningRecommender recommender={openingRec} />}
 
       {analyzing && !a && (
         <div style={{ textAlign: 'center', padding: '16px 0', color: '#6b7280', fontSize: 12 }}>
