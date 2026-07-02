@@ -109,69 +109,82 @@ export function PremiumPage() {
       <div style={{ maxWidth: 720, margin: '0 auto', padding: 24 }}>
         {/* Hero */}
         <div
+          className="relative overflow-hidden"
           style={{
-            borderRadius: 14,
-            padding: 24,
-            marginBottom: 20,
-            background:
-              'linear-gradient(135deg, rgba(34,197,94,0.18), rgba(34,211,238,0.12) 60%, rgba(15,23,42,0.4))',
-            border: `1px solid ${BORDER}`,
+            borderRadius: 24,
+            padding: 40,
+            marginBottom: 32,
+            background: 'linear-gradient(135deg, rgba(15,23,42,0.6) 0%, rgba(2,6,23,0.8) 100%)',
+            border: '1px solid rgba(255,255,255,0.05)',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1)',
+            backdropFilter: 'blur(16px)',
           }}
         >
+          {/* Subtle background glow for the hero card */}
+          <div className="absolute top-0 right-0 w-64 h-64 bg-green-500/20 rounded-full blur-[80px] pointer-events-none" />
+          
           <div
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 6,
-              fontSize: 11,
-              fontWeight: 700,
-              padding: '4px 10px',
+              gap: 8,
+              fontSize: 12,
+              fontWeight: 800,
+              padding: '6px 14px',
               borderRadius: 999,
-              background: 'rgba(34,197,94,0.2)',
-              border: '1px solid rgba(34,197,94,0.4)',
+              background: 'linear-gradient(90deg, rgba(34,197,94,0.15), rgba(6,182,212,0.15))',
+              border: '1px solid rgba(34,197,94,0.3)',
               color: '#4ade80',
-              marginBottom: 10,
+              marginBottom: 16,
+              boxShadow: '0 0 12px rgba(34,197,94,0.2)',
             }}
           >
             <span aria-hidden>⭐</span> BoardGPT Premium
           </div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, margin: '0 0 6px 0' }}>
-            Play sharper. Learn faster.
+          <h1 style={{ fontSize: 40, fontWeight: 900, letterSpacing: '-0.02em', margin: '0 0 12px 0' }}>
+            <span className="bg-clip-text text-transparent bg-gradient-to-br from-white to-gray-400">Play sharper. </span>
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-400 to-cyan-400">Learn faster.</span>
           </h1>
-          <p style={{ fontSize: 14, color: MUTED, margin: 0, maxWidth: 480, lineHeight: 1.5 }}>
-            Deeper engine analysis, an AI coach, unlimited drills and cross-device history — all in
-            one upgrade.
+          <p style={{ fontSize: 16, color: '#94a3b8', margin: 0, maxWidth: 540, lineHeight: 1.6 }}>
+            Deeper engine analysis, an AI coach, unlimited drills, and cross-device history — all in
+            one powerful upgrade.
           </p>
-          <div style={{ marginTop: 14, fontSize: 13 }}>
-            Current plan:{' '}
-            <span style={{ fontWeight: 700, color: isPremium ? ACCENT : MUTED }}>
-              {auth ? (isPremium ? 'Premium' : 'Free') : '…'}
+          <div style={{ marginTop: 24, fontSize: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span className="px-3 py-1 rounded-full bg-gray-800/50 border border-gray-700">
+              Current plan:{' '}
+              <span style={{ fontWeight: 800, color: isPremium ? ACCENT : '#f8fafc' }}>
+                {auth ? (isPremium ? 'Premium' : 'Free') : '…'}
+              </span>
             </span>
-            {auth?.email && <span style={{ color: MUTED }}> · {auth.email}</span>}
+            {auth?.email && <span style={{ color: MUTED }}>{auth.email}</span>}
           </div>
         </div>
 
         {/* Comparison table */}
         <div
           style={{
-            background: PANEL_ALT,
-            border: `1px solid ${BORDER}`,
-            borderRadius: 12,
+            background: 'rgba(15,23,42,0.4)',
+            border: '1px solid rgba(255,255,255,0.05)',
+            borderRadius: 20,
             overflow: 'hidden',
-            marginBottom: 20,
+            marginBottom: 32,
+            boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+            backdropFilter: 'blur(12px)',
           }}
         >
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
             <thead>
-              <tr style={{ background: PANEL, color: MUTED }}>
-                <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 600 }}>Feature</th>
-                <th style={{ textAlign: 'center', padding: '10px 14px', fontWeight: 600 }}>Free</th>
+              <tr style={{ background: 'rgba(255,255,255,0.02)' }}>
+                <th style={{ textAlign: 'left', padding: '16px 24px', fontWeight: 600, color: '#94a3b8' }}>Feature</th>
+                <th style={{ textAlign: 'center', padding: '16px 24px', fontWeight: 600, color: '#94a3b8' }}>Free</th>
                 <th
                   style={{
                     textAlign: 'center',
-                    padding: '10px 14px',
-                    fontWeight: 700,
+                    padding: '16px 24px',
+                    fontWeight: 800,
                     color: ACCENT,
+                    background: 'rgba(34,197,94,0.05)',
+                    borderBottom: '2px solid rgba(34,197,94,0.3)',
                   }}
                 >
                   Premium
@@ -179,13 +192,19 @@ export function PremiumPage() {
               </tr>
             </thead>
             <tbody>
-              {FEATURES.map((f) => (
-                <tr key={f.name} style={{ borderTop: `1px solid ${BORDER}` }}>
-                  <td style={{ padding: '10px 14px', color: TEXT }}>{f.name}</td>
-                  <td style={{ padding: '10px 14px', textAlign: 'center', color: MUTED }}>
+              {FEATURES.map((f, i) => (
+                <tr 
+                  key={f.name} 
+                  style={{ 
+                    borderTop: '1px solid rgba(255,255,255,0.05)',
+                    background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)'
+                  }}
+                >
+                  <td style={{ padding: '16px 24px', color: '#e2e8f0', fontWeight: 500 }}>{f.name}</td>
+                  <td style={{ padding: '16px 24px', textAlign: 'center', color: '#64748b' }}>
                     <Cell value={f.free} />
                   </td>
-                  <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                  <td style={{ padding: '16px 24px', textAlign: 'center', background: 'rgba(34,197,94,0.02)' }}>
                     <Cell value={f.premium} strong />
                   </td>
                 </tr>
@@ -197,13 +216,16 @@ export function PremiumPage() {
         {/* Pricing */}
         <div
           style={{
-            background: PANEL_ALT,
-            border: `1px solid ${BORDER}`,
-            borderRadius: 12,
-            padding: 20,
+            background: 'linear-gradient(180deg, rgba(30,41,59,0.5) 0%, rgba(15,23,42,0.7) 100%)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: 24,
+            padding: 32,
+            backdropFilter: 'blur(12px)',
+            boxShadow: '0 10px 40px rgba(0,0,0,0.4)',
+            textAlign: 'center',
           }}
         >
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <div style={{ display: 'inline-flex', gap: 6, marginBottom: 24, background: 'rgba(0,0,0,0.3)', padding: 6, borderRadius: 14, border: '1px solid rgba(255,255,255,0.05)' }}>
             {(['monthly', 'yearly'] as Interval[]).map((i) => {
               const active = interval === i;
               return (
@@ -211,16 +233,17 @@ export function PremiumPage() {
                   key={i}
                   onClick={() => setInterval(i)}
                   style={{
-                    flex: 1,
-                    padding: '10px 12px',
-                    borderRadius: 8,
-                    border: `1px solid ${active ? ACCENT : BORDER}`,
-                    background: active ? 'rgba(34,197,94,0.12)' : 'transparent',
-                    color: active ? '#4ade80' : TEXT,
-                    fontSize: 13,
+                    padding: '10px 24px',
+                    borderRadius: 10,
+                    border: 'none',
+                    background: active ? 'linear-gradient(135deg, #16a34a, #059669)' : 'transparent',
+                    color: active ? '#ffffff' : '#94a3b8',
+                    fontSize: 14,
                     fontWeight: 700,
                     cursor: 'pointer',
                     textTransform: 'capitalize',
+                    boxShadow: active ? '0 4px 12px rgba(22,163,74,0.4)' : 'none',
+                    transition: 'all 0.2s ease',
                   }}
                 >
                   {i}
@@ -229,9 +252,9 @@ export function PremiumPage() {
             })}
           </div>
 
-          <div style={{ textAlign: 'center', marginBottom: 16 }}>
-            <span style={{ fontSize: 34, fontWeight: 800 }}>{PRICE[interval].amount}</span>{' '}
-            <span style={{ fontSize: 13, color: MUTED }}>{PRICE[interval].caption}</span>
+          <div style={{ marginBottom: 24 }}>
+            <span style={{ fontSize: 48, fontWeight: 900, color: '#f8fafc', letterSpacing: '-0.03em' }}>{PRICE[interval].amount}</span>
+            <span style={{ fontSize: 16, color: '#94a3b8', marginLeft: 8 }}>{PRICE[interval].caption}</span>
           </div>
 
           <button
@@ -239,25 +262,43 @@ export function PremiumPage() {
             disabled={busy || isPremium}
             style={{
               width: '100%',
-              padding: '12px 18px',
-              borderRadius: 10,
+              maxWidth: 400,
+              padding: '16px 24px',
+              borderRadius: 14,
               border: 'none',
-              background: isPremium ? '#1f2937' : ACCENT,
-              color: isPremium ? MUTED : '#0b1120',
-              fontSize: 15,
+              background: isPremium 
+                ? 'rgba(255,255,255,0.05)' 
+                : 'linear-gradient(135deg, #22c55e 0%, #0ea5e9 100%)',
+              color: isPremium ? '#64748b' : '#ffffff',
+              fontSize: 16,
               fontWeight: 800,
               cursor: isPremium || busy ? 'default' : 'pointer',
-              opacity: busy ? 0.6 : 1,
+              opacity: busy ? 0.8 : 1,
+              boxShadow: isPremium ? 'none' : '0 8px 20px rgba(34,197,94,0.4)',
+              transition: 'transform 0.2s, box-shadow 0.2s',
+              transform: busy ? 'scale(0.98)' : 'scale(1)',
+            }}
+            onMouseEnter={(e) => {
+              if (!isPremium && !busy) {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 12px 24px rgba(34,197,94,0.5)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isPremium && !busy) {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 8px 20px rgba(34,197,94,0.4)';
+              }
             }}
           >
             {isPremium ? 'You are on Premium' : busy ? 'Starting checkout…' : 'Upgrade to Premium'}
           </button>
 
-          {message && <div style={{ fontSize: 12, color: ACCENT, marginTop: 12 }}>{message}</div>}
-          {error && <div style={{ fontSize: 12, color: '#f87171', marginTop: 12 }}>{error}</div>}
+          {message && <div style={{ fontSize: 13, fontWeight: 600, color: '#4ade80', marginTop: 16 }}>{message}</div>}
+          {error && <div style={{ fontSize: 13, fontWeight: 600, color: '#f87171', marginTop: 16 }}>{error}</div>}
 
-          <p style={{ fontSize: 11, color: MUTED, marginTop: 14, textAlign: 'center' }}>
-            Secure payment via Stripe. Cancel anytime.
+          <p style={{ fontSize: 12, color: '#64748b', marginTop: 20, textAlign: 'center' }}>
+            🔒 Secure payment via Stripe. Cancel anytime.
           </p>
         </div>
       </div>

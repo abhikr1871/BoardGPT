@@ -378,6 +378,11 @@ export function OverlayApp() {
                 site={getSite()}
                 onHoverMove={setHoverUci}
                 features={features}
+                settings={settings}
+                onToggleThreatArrow={(v) => {
+                  setSettings(s => ({ ...s, showThreatArrow: v }));
+                  import('../lib/storage').then(m => m.saveSettings({ ...settings, showThreatArrow: v }));
+                }}
               />
             )}
 
@@ -433,6 +438,8 @@ function LiveView({
   site,
   onHoverMove,
   features,
+  settings,
+  onToggleThreatArrow,
 }: {
   status: ReturnType<typeof useLiveGame>['status'];
   analyzing: boolean;
@@ -446,6 +453,8 @@ function LiveView({
   site?: string;
   onHoverMove?: (uci: string | null) => void;
   features?: FeatureFlags;
+  settings: Settings;
+  onToggleThreatArrow?: (val: boolean) => void;
 }) {
   const show = features ?? { arrows: true, coach: true, evalBar: true, openings: true };
   const siteLabel = site && site !== 'other' ? site : 'chess';
@@ -546,6 +555,14 @@ function LiveView({
         <div style={{ display: 'flex', gap: 10 }}>
           {show.evalBar && <EvalBar cp={whiteCp} />}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <label style={{ fontSize: 11, color: '#9ca3af', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginBottom: 0 }}>
+              <input 
+                type="checkbox" 
+                checked={settings.showThreatArrow} 
+                onChange={(e) => onToggleThreatArrow?.(e.target.checked)}
+              />
+              Show opponent's threat arrow
+            </label>
             {a.moves.map((m) => (
               <div
                 key={m.uci}

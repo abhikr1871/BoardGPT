@@ -107,22 +107,44 @@ function Dashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-panel text-gray-100 font-sans">
-      <div className="max-w-4xl mx-auto p-8">
-        <h1 className="text-lg font-bold text-accent mb-1">♟ BoardGPT Dashboard</h1>
+    <div 
+      className="min-h-screen text-gray-100 font-sans relative overflow-x-hidden"
+      style={{ background: 'linear-gradient(135deg, #020617 0%, #0f172a 100%)' }}
+    >
+      {/* Ambient background glows */}
+      <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vh] rounded-full bg-green-500/10 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vh] rounded-full bg-cyan-500/10 blur-[120px] pointer-events-none" />
 
-        <div className="flex gap-2 my-4 border-b border-gray-800">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`px-3 py-2 text-sm -mb-px border-b-2 ${
-                tab === t.id ? 'border-accent text-accent font-semibold' : 'border-transparent text-gray-400'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+      <div className="relative z-10 max-w-5xl mx-auto p-4 sm:p-8">
+        <h1 className="text-2xl font-black mb-6 flex items-center gap-3">
+          <span className="text-3xl filter drop-shadow-[0_0_8px_rgba(34,197,94,0.5)]">♟</span>
+          <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-400 to-cyan-400 tracking-tight">
+            BoardGPT Dashboard
+          </span>
+        </h1>
+
+        {/* Glassmorphic Tabs */}
+        <div className="flex flex-wrap gap-1.5 mb-8 p-1.5 bg-gray-900/50 border border-white/5 rounded-2xl backdrop-blur-md shadow-2xl">
+          {TABS.map((t) => {
+            const active = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                style={{
+                  background: active ? 'linear-gradient(135deg, #16a34a, #059669)' : 'transparent',
+                  boxShadow: active ? '0 4px 12px rgba(22, 163, 74, 0.3)' : 'none',
+                }}
+                className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                  active 
+                    ? 'text-white' 
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                }`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
         </div>
 
         {tab === 'clinic' && <MistakeClinic />}

@@ -109,6 +109,7 @@ export function useLiveGame(enabled: boolean): LiveState {
   const settingsRef = useRef<Settings | null>(null);
   const debounceRef = useRef<number | null>(null);
   const analyzingRef = useRef(false);
+  const pendingUpdRef = useRef<TrackerUpdate | null>(null);
   const finishedRef = useRef(false);
 
   useEffect(() => {
@@ -142,7 +143,8 @@ export function useLiveGame(enabled: boolean): LiveState {
       const upd = trackerRef.current.update(snap, reader.readClockTurn());
       if (upd) {
         setState((s) => ({ ...s, status: 'watching', update: upd }));
-        if (!analyzingRef.current) void runAnalysis(upd);
+        pendingUpdRef.current = upd;
+        if (!analyzingRef.current) void runAnalysis();
       } else {
         setState((s) => (s.status === 'watching' ? s : { ...s, status: 'watching' }));
       }
@@ -174,7 +176,10 @@ export function useLiveGame(enabled: boolean): LiveState {
       }
     };
 
-    const runAnalysis = async (upd: TrackerUpdate) => {
+    const runAnalysis = async () => {
+      const upd = pendingUpdRef.current;
+      if (!upd) return;
+      pendingUpdRef.current = null;
       analyzingRef.current = true;
       setState((s) => ({ ...s, analyzing: true }));
       try {
@@ -187,6 +192,9 @@ export function useLiveGame(enabled: boolean): LiveState {
         setState((prev) => ({ ...prev, analyzing: false }));
       } finally {
         analyzingRef.current = false;
+        if (pendingUpdRef.current) {
+          void runAnalysis();
+        }
       }
     };
 
