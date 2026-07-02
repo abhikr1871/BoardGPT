@@ -98,6 +98,8 @@ export interface Settings {
   blunderShield: boolean;
   /** Subscription plan (Phase 5). Free unless upgraded. */
   plan: 'free' | 'premium';
+  /** Syzygy endgame tablebase API base (defaults to the public Lichess tablebase). */
+  syzygyApiUrl: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -119,6 +121,7 @@ export const DEFAULT_SETTINGS: Settings = {
   miniMode: false,
   blunderShield: true,
   plan: 'free',
+  syzygyApiUrl: 'https://tablebase.lichess.ovh',
 };
 
 /** A recorded game payload sent to the backend. */

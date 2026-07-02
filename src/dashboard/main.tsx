@@ -13,7 +13,10 @@ import { StudyPlan } from './StudyPlan';
 import { GameHistory } from './GameHistory';
 import { LoginPage } from './LoginPage';
 import { PremiumPage } from './PremiumPage';
+import { PremiumGate } from './PremiumGate';
+import { ReviewBoard } from './ReviewBoard';
 import { getAuth } from '../lib/auth';
+import { loadSettings } from '../lib/storage';
 import { freeUsesLeft, consumeAnalysis, FREE_ANALYSIS_LIMIT } from '../lib/usage';
 import '../styles/tailwind.css';
 
@@ -72,17 +75,21 @@ function Dashboard() {
   const [myColor, setMyColor] = useState<'w' | 'b'>('w');
   const [captured, setCaptured] = useState<number | null>(null);
   const [loggedIn, setLoggedIn] = useState(false);
+  const [premium, setPremium] = useState(false);
   const [usesLeft, setUsesLeft] = useState<number>(FREE_ANALYSIS_LIMIT);
   const [booted, setBooted] = useState(false);
 
   const refreshAuthUsage = () =>
-    Promise.all([getAuth().catch(() => null), freeUsesLeft().catch(() => FREE_ANALYSIS_LIMIT)]).then(
-      ([auth, left]) => {
-        setLoggedIn(!!auth?.token);
-        setUsesLeft(left);
-        return { authed: !!auth?.token, left };
-      },
-    );
+    Promise.all([
+      getAuth().catch(() => null),
+      freeUsesLeft().catch(() => FREE_ANALYSIS_LIMIT),
+      loadSettings().catch(() => null),
+    ]).then(([auth, left, settings]) => {
+      setLoggedIn(!!auth?.token);
+      setPremium(auth?.plan === 'premium' || settings?.plan === 'premium');
+      setUsesLeft(left);
+      return { authed: !!auth?.token, left };
+    });
 
   useEffect(() => {
     listGames().then(setRecent).catch(() => {});
@@ -140,18 +147,18 @@ function Dashboard() {
       <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vh] rounded-full bg-green-500/10 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vh] rounded-full bg-cyan-500/10 blur-[120px] pointer-events-none" />
 
-      <div className="relative z-10 max-w-5xl mx-auto p-4 sm:p-8">
-        <h1 className="text-2xl font-black mb-6 flex items-center gap-3">
-          <span className="text-3xl filter drop-shadow-[0_0_8px_rgba(34,197,94,0.5)]">♟</span>
-          <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-400 to-cyan-400 tracking-tight">
-            BoardGPT Dashboard
-          </span>
-        </h1>
-
-        {/* Glassmorphic Tabs */}
-        <div className="flex flex-wrap gap-1.5 mb-8 p-1.5 bg-gray-900/50 border border-white/5 rounded-2xl backdrop-blur-md shadow-2xl">
+      <div className="relative z-10 flex min-h-screen w-full">
+        {/* ── Left sidebar ── */}
+        <aside className="shrink-0 w-60 border-r border-white/5 bg-gray-900/40 backdrop-blur-md flex flex-col p-4 gap-1">
+          <div className="flex items-center gap-2 px-2 mb-6 mt-1">
+            <span className="text-2xl filter drop-shadow-[0_0_8px_rgba(34,197,94,0.5)]">♟</span>
+            <span className="text-lg font-black bg-clip-text text-transparent bg-gradient-to-r from-green-400 to-cyan-400 tracking-tight">
+              BoardGPT
+            </span>
+          </div>
           {TABS.map((t) => {
             const active = tab === t.id;
+            const isPremiumTab = t.id === 'trainer' || t.id === 'courses' || t.id === 'analytics';
             return (
               <button
                 key={t.id}
@@ -160,22 +167,38 @@ function Dashboard() {
                   background: active ? 'linear-gradient(135deg, #16a34a, #059669)' : 'transparent',
                   boxShadow: active ? '0 4px 12px rgba(22, 163, 74, 0.3)' : 'none',
                 }}
-                className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                  active 
-                    ? 'text-white' 
-                    : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                className={`w-full text-left px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center justify-between ${
+                  active ? 'text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
                 }`}
               >
-                {t.label}
+                <span>{t.label}</span>
+                {isPremiumTab && !premium && <span title="Premium" className="text-[10px]">⭐</span>}
               </button>
             );
           })}
-        </div>
+          <div className="mt-auto px-2 pt-4 text-[11px] text-gray-500">
+            {premium ? '⭐ Premium' : loggedIn ? 'Free plan' : 'Not signed in'}
+          </div>
+        </aside>
 
+        {/* ── Main content (full remaining width) ── */}
+        <main className="flex-1 min-w-0 p-4 sm:p-8 overflow-x-hidden">
         {tab === 'clinic' && <MistakeClinic />}
-        {tab === 'trainer' && <RepertoireTrainer />}
-        {tab === 'courses' && <Masterclass />}
-        {tab === 'analytics' && <Analytics />}
+        {tab === 'trainer' && (
+          <PremiumGate feature="Opening Trainer" premium={premium} onUpgrade={() => setTab('premium')}>
+            <RepertoireTrainer />
+          </PremiumGate>
+        )}
+        {tab === 'courses' && (
+          <PremiumGate feature="Masterclasses" premium={premium} onUpgrade={() => setTab('premium')}>
+            <Masterclass />
+          </PremiumGate>
+        )}
+        {tab === 'analytics' && (
+          <PremiumGate feature="Analytics" premium={premium} onUpgrade={() => setTab('premium')}>
+            <Analytics />
+          </PremiumGate>
+        )}
         {tab === 'plan' && <StudyPlan />}
         {tab === 'account' && (
           <LoginPage onAuthChanged={() => refreshAuthUsage()} />
@@ -265,6 +288,9 @@ function Dashboard() {
 
         {review && (
           <div className="mt-6 space-y-6">
+            {/* Interactive replay + analysis board */}
+            <ReviewBoard pgn={pgn} />
+
             <div className="grid grid-cols-3 gap-3">
               <div className="rounded-lg bg-panel-alt border border-gray-700 p-4">
                 <div className="text-xs text-gray-400">White accuracy</div>
@@ -332,6 +358,7 @@ function Dashboard() {
         )}
         </>
         )}
+        </main>
       </div>
     </div>
   );

@@ -141,6 +141,26 @@ function Options() {
             onChange={(e) => update('blunderShield', e.target.checked)} />
         </Row>
 
+        <Row label="Plan (local testing)" hint="Set Premium to preview premium-only sections without a live payment backend">
+          <select
+            className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm"
+            value={s.plan}
+            onChange={(e) => update('plan', e.target.value as 'free' | 'premium')}
+          >
+            <option value="free">Free</option>
+            <option value="premium">Premium</option>
+          </select>
+        </Row>
+
+        <Row label="Syzygy tablebase API" hint="Endgame tablebase endpoint (Lichess-compatible JSON). Swap in your own API.">
+          <input
+            className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm w-48 font-mono"
+            placeholder="https://tablebase.lichess.ovh"
+            value={s.syzygyApiUrl}
+            onChange={(e) => update('syzygyApiUrl', e.target.value)}
+          />
+        </Row>
+
         <Row label="Backend API URL" hint="For game recording, e.g. http://localhost:3000 (blank = local only)">
           <input
             className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm w-48 font-mono"

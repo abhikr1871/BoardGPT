@@ -37,8 +37,8 @@ const FEATURES: FeatureRow[] = [
 ];
 
 const PRICE: Record<Interval, { amount: string; caption: string }> = {
-  monthly: { amount: '$4.99', caption: 'per month' },
-  yearly: { amount: '$39.99', caption: 'per year · save 33%' },
+  monthly: { amount: '₹99', caption: 'per month' },
+  yearly: { amount: '₹799', caption: 'per year · save 33%' },
 };
 
 function trimBaseUrl(url: string): string {
