@@ -46,6 +46,74 @@ export async function explainMoves(
   return moves.map((m) => ({ ...m, explanation: heuristicExplanation(fen, m) }));
 }
 
+const COACH_SYSTEM =
+  'You are a friendly, encouraging chess coach. Given a summary of a player\'s ' +
+  'recent-game statistics, write a short personalized assessment (Markdown, 4-6 ' +
+  'sentences): call out 1-2 concrete strengths, 1-2 weaknesses, and one actionable ' +
+  'thing to work on next. Be specific and warm, not generic.';
+
+/**
+ * General-purpose AI coaching text from a free-form prompt (used by Analytics).
+ * Tries on-device Gemini Nano first, then Anthropic Claude if a key is set.
+ * Returns null when no AI is available so callers can show a heuristic fallback.
+ */
+export async function coachInsight(prompt: string, settings: Settings): Promise<string | null> {
+  // Tier 0 — Gemini Nano (on-device, free).
+  try {
+    const ai = (self as any).ai;
+    if ('ai' in self && ai?.languageModel) {
+      let ok = true;
+      try {
+        const caps = await ai.languageModel.capabilities?.();
+        if (caps && caps.available === 'no') ok = false;
+      } catch {
+        /* older builds: attempt anyway */
+      }
+      if (ok) {
+        const session = await ai.languageModel.create({ systemPrompt: COACH_SYSTEM });
+        try {
+          const text: string = await session.prompt(prompt);
+          if (text && text.trim()) return text.trim();
+        } finally {
+          try { session?.destroy?.(); } catch { /* ignore */ }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[ChessAI] coachInsight Gemini Nano failed:', e);
+  }
+
+  // Tier 1 — Anthropic Claude.
+  if (settings.anthropicApiKey) {
+    try {
+      const res = await fetch(ANTHROPIC_URL, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': settings.anthropicApiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: settings.claudeModel,
+          max_tokens: 400,
+          system: COACH_SYSTEM,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const text: string = data?.content?.[0]?.text ?? '';
+        if (text.trim()) return text.trim();
+      }
+    } catch (e) {
+      console.warn('[ChessAI] coachInsight Claude failed:', e);
+    }
+  }
+
+  return null;
+}
+
 /**
  * Tier 0 explainer using Chrome's built-in on-device model (Gemini Nano) via
  * the Prompt API (`self.ai.languageModel`). Returns explanations for every move,

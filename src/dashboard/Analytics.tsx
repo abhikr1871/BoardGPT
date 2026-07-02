@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { coachInsight } from '../engine/claude';
 import { reviewGame } from '../engine/postgame';
 import { listGames, type StoredGame } from '../lib/games';
 import { listMistakes, type Mistake } from '../lib/mistakeDB';
-import type { GameReview } from '../types';
+import { loadSettings } from '../lib/storage';
+import type { GameReview, Settings } from '../types';
 
 /**
  * Performance analytics (Phase 3). Re-reviews the most recent games locally and
@@ -60,6 +62,139 @@ function Stat({ label, value, color }: { label: string; value: string; color?: s
       <div style={{ fontSize: 11, color: MUTED }}>{label}</div>
       <div style={{ fontSize: 24, fontWeight: 800, color: color ?? TEXT, marginTop: 2 }}>{value}</div>
     </div>
+  );
+}
+
+/** Aggregate performance numbers derived from the reviewed games + mistake store. */
+interface PerfStats {
+  wins: number;
+  losses: number;
+  draws: number;
+  avgAccuracy: number;
+  blunderRate: number;
+  totalBlunders: number;
+  accuracyByResult: { W: number | null; L: number | null; D: number | null };
+}
+
+/** Ordered [theme, count] pairs, most frequent first. */
+type ThemeCounts = ReadonlyArray<readonly [string, number]>;
+
+/**
+ * Assemble a concise, plain-text summary of the player's numbers for the coach
+ * prompt. Kept deterministic and free of markup so any AI tier can consume it.
+ */
+function buildSummary(games: number, stats: PerfStats, themes: ThemeCounts): string {
+  const acc = (v: number | null) => (v === null ? 'n/a' : `${v}%`);
+  const topThemes =
+    themes.length > 0
+      ? themes
+          .slice(0, 3)
+          .map(([theme, count]) => `${themeLabel(theme)} (${count})`)
+          .join(', ')
+      : 'none recorded';
+  const perGame = games > 0 ? Math.round((stats.totalBlunders / games) * 10) / 10 : 0;
+  const lines = [
+    `Games analysed: ${games}.`,
+    `Record (W/L/D): ${stats.wins}/${stats.losses}/${stats.draws}.`,
+    `Average accuracy: ${stats.avgAccuracy}%.`,
+    `Blunder rate: ${stats.blunderRate}% (about ${perGame} blunders per game).`,
+    `Accuracy in wins: ${acc(stats.accuracyByResult.W)}, draws: ${acc(
+      stats.accuracyByResult.D,
+    )}, losses: ${acc(stats.accuracyByResult.L)}.`,
+    `Most common mistake themes: ${topThemes}.`,
+  ];
+  return lines.join('\n');
+}
+
+/**
+ * Local heuristic coaching summary, used when no AI backend is configured
+ * (coachInsight returned null). Generated purely from the same aggregate stats.
+ */
+function heuristicInsight(games: number, stats: PerfStats, themes: ThemeCounts): string {
+  const perGame = games > 0 ? Math.round((stats.totalBlunders / games) * 10) / 10 : 0;
+  const topTheme = themes.length > 0 ? themeLabel(themes[0][0]) : null;
+  const themeList =
+    themes.length > 0
+      ? themes
+          .slice(0, 3)
+          .map(([theme]) => themeLabel(theme).toLowerCase())
+          .join(', ')
+      : null;
+
+  const paras: string[] = [];
+  paras.push(
+    `Across your last **${games}** analysed game${games === 1 ? '' : 's'} you're averaging **${
+      stats.avgAccuracy
+    }%** accuracy with a record of **${stats.wins}W / ${stats.losses}L / ${stats.draws}D**.`,
+  );
+  paras.push(
+    `You blunder about **${perGame} time${perGame === 1 ? '' : 's'} per game** (a ${
+      stats.blunderRate
+    }% blunder rate)` +
+      (themeList ? `, and your most common mistakes are **${themeList}**.` : '.'),
+  );
+
+  let focus: string;
+  if (stats.blunderRate > 5) {
+    focus = topTheme
+      ? `Focus on cutting down blunders — before each move, do a quick check for ${topTheme.toLowerCase()} and undefended pieces.`
+      : 'Focus on cutting down blunders — take an extra moment each move to check for hanging pieces and opponent threats.';
+  } else if (stats.avgAccuracy < 80) {
+    focus = topTheme
+      ? `Your blunder rate is under control; to raise accuracy, drill ${topTheme.toLowerCase()} and calculate one move deeper in sharp positions.`
+      : 'Your blunder rate is under control; to raise accuracy, slow down in critical moments and calculate one move deeper.';
+  } else {
+    focus =
+      'Solid, consistent play — keep it up and push for precision by reviewing the few inaccuracies that slip through.';
+  }
+  paras.push(`**Focus:** ${focus}`);
+
+  return paras.join('\n\n');
+}
+
+/** Split a **bold** span-aware paragraph into React nodes, mapping **x** → <strong>. */
+function renderInline(text: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  const re = /\*\*(.+?)\*\*/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let key = 0;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) nodes.push(text.slice(last, m.index));
+    nodes.push(
+      <strong key={`b${key++}`} style={{ color: TEXT, fontWeight: 700 }}>
+        {m[1]}
+      </strong>,
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
+}
+
+/** Render coach text: split on blank lines into paragraphs, applying inline bold. */
+function CoachText({ text }: { text: string }) {
+  const paras = text
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const list = paras.length > 0 ? paras : [text];
+  return (
+    <>
+      {list.map((p, i) => (
+        <p
+          key={i}
+          style={{
+            fontSize: 13,
+            lineHeight: 1.55,
+            color: MUTED,
+            margin: i === 0 ? '0 0 8px 0' : '0 0 8px 0',
+          }}
+        >
+          {renderInline(p)}
+        </p>
+      ))}
+    </>
   );
 }
 
@@ -122,6 +257,12 @@ export function Analytics() {
   const [mistakes, setMistakes] = useState<Mistake[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // AI Coach Insights (Phase 4) — populated once local stats are ready.
+  const [insight, setInsight] = useState<string | null>(null);
+  const [insightLoading, setInsightLoading] = useState(false);
+  /** True when the shown text came from the local heuristic (no AI configured). */
+  const [insightFromFallback, setInsightFromFallback] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -160,7 +301,7 @@ export function Analytics() {
     };
   }, []);
 
-  const stats = useMemo(() => {
+  const stats = useMemo<PerfStats>(() => {
     const wins = reviewed.filter((r) => r.outcome === 'W').length;
     const losses = reviewed.filter((r) => r.outcome === 'L').length;
     const draws = reviewed.filter((r) => r.outcome === 'D').length;
@@ -194,6 +335,54 @@ export function Analytics() {
     for (const m of mistakes) counts[m.theme] = (counts[m.theme] ?? 0) + 1;
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
   }, [mistakes]);
+
+  // Guards against out-of-order async completions (e.g. rapid Regenerate clicks).
+  const insightRunRef = useRef(0);
+
+  const fetchInsight = useCallback(async () => {
+    const gameCount = reviewed.length;
+    if (gameCount === 0) return; // only fetch when there's at least 1 game
+    const runId = ++insightRunRef.current;
+    setInsightLoading(true);
+    try {
+      const summary = buildSummary(gameCount, stats, themeCounts);
+      let text: string | null = null;
+      try {
+        const settings: Settings = await loadSettings();
+        text = await coachInsight(summary, settings);
+      } catch (e) {
+        console.warn('[ChessAI] AI coach insight failed:', e);
+        text = null;
+      }
+      if (insightRunRef.current !== runId) return; // superseded by a newer run
+      if (text && text.trim()) {
+        setInsight(text.trim());
+        setInsightFromFallback(false);
+      } else {
+        setInsight(heuristicInsight(gameCount, stats, themeCounts));
+        setInsightFromFallback(true);
+      }
+    } catch (e) {
+      // Never let the coach card crash the tab — degrade to the local heuristic.
+      console.warn('[ChessAI] AI coach card error:', e);
+      if (insightRunRef.current === runId) {
+        try {
+          setInsight(heuristicInsight(gameCount, stats, themeCounts));
+          setInsightFromFallback(true);
+        } catch {
+          /* ignore */
+        }
+      }
+    } finally {
+      if (insightRunRef.current === runId) setInsightLoading(false);
+    }
+  }, [reviewed.length, stats, themeCounts]);
+
+  // Kick off (or refresh) the insight once local analysis has finished.
+  useEffect(() => {
+    if (loading || reviewed.length === 0) return;
+    void fetchInsight();
+  }, [loading, fetchInsight, reviewed.length]);
 
   return (
     <div style={{ color: TEXT, fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
@@ -235,6 +424,80 @@ export function Analytics() {
                 value={`${stats.blunderRate}%`}
                 color={stats.blunderRate > 5 ? '#fb923c' : TEXT}
               />
+            </div>
+
+            {/* AI Coach Insights (Phase 4) — glassmorphic, accent green. */}
+            <div
+              style={{
+                position: 'relative',
+                background: 'rgba(34,197,94,0.06)',
+                border: `1px solid rgba(34,197,94,0.35)`,
+                borderRadius: 12,
+                padding: 16,
+                marginBottom: 20,
+                boxShadow: '0 1px 24px rgba(34,197,94,0.08)',
+                backdropFilter: 'blur(6px)',
+                WebkitBackdropFilter: 'blur(6px)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  marginBottom: insight || insightLoading ? 10 : 0,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 15, color: ACCENT }}>✦</span>
+                  <h2 style={{ fontSize: 13, fontWeight: 800, color: ACCENT, margin: 0 }}>
+                    AI Coach Insights
+                  </h2>
+                  {insightFromFallback && insight && !insightLoading && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: MUTED,
+                        border: `1px solid ${BORDER}`,
+                        borderRadius: 999,
+                        padding: '1px 8px',
+                      }}
+                    >
+                      offline summary
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void fetchInsight()}
+                  disabled={insightLoading}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: insightLoading ? MUTED : ACCENT,
+                    background: 'transparent',
+                    border: `1px solid ${insightLoading ? BORDER : 'rgba(34,197,94,0.5)'}`,
+                    borderRadius: 8,
+                    padding: '4px 10px',
+                    cursor: insightLoading ? 'default' : 'pointer',
+                  }}
+                >
+                  {insightLoading ? 'Thinking…' : 'Regenerate'}
+                </button>
+              </div>
+
+              {insightLoading && !insight && (
+                <div style={{ fontSize: 13, color: MUTED }}>
+                  Reviewing your numbers and drafting coaching tips…
+                </div>
+              )}
+              {insight && <CoachText text={insight} />}
+              {!insightLoading && !insight && (
+                <div style={{ fontSize: 12, color: MUTED }}>
+                  No insight yet — hit Regenerate to analyse your recent play.
+                </div>
+              )}
             </div>
 
             <div style={{ marginBottom: 20 }}>

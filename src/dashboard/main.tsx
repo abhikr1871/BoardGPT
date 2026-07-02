@@ -13,6 +13,8 @@ import { StudyPlan } from './StudyPlan';
 import { GameHistory } from './GameHistory';
 import { LoginPage } from './LoginPage';
 import { PremiumPage } from './PremiumPage';
+import { getAuth } from '../lib/auth';
+import { freeUsesLeft, consumeAnalysis, FREE_ANALYSIS_LIMIT } from '../lib/usage';
 import '../styles/tailwind.css';
 
 type Tab =
@@ -22,7 +24,6 @@ type Tab =
   | 'courses'
   | 'analytics'
   | 'plan'
-  | 'history'
   | 'account'
   | 'premium';
 
@@ -70,12 +71,35 @@ function Dashboard() {
   const [tab, setTab] = useState<Tab>('review');
   const [myColor, setMyColor] = useState<'w' | 'b'>('w');
   const [captured, setCaptured] = useState<number | null>(null);
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [usesLeft, setUsesLeft] = useState<number>(FREE_ANALYSIS_LIMIT);
+  const [booted, setBooted] = useState(false);
+
+  const refreshAuthUsage = () =>
+    Promise.all([getAuth().catch(() => null), freeUsesLeft().catch(() => FREE_ANALYSIS_LIMIT)]).then(
+      ([auth, left]) => {
+        setLoggedIn(!!auth?.token);
+        setUsesLeft(left);
+        return { authed: !!auth?.token, left };
+      },
+    );
 
   useEffect(() => {
     listGames().then(setRecent).catch(() => {});
+    // First-run flow: send anonymous users to the Login page by default.
+    refreshAuthUsage().then(({ authed }) => {
+      if (!authed) setTab('account');
+      setBooted(true);
+    });
   }, []);
 
+  const locked = !loggedIn && usesLeft <= 0;
+
   function run() {
+    if (locked) {
+      setTab('account');
+      return;
+    }
     setError(null);
     setBusy(true);
     setCaptured(null);
@@ -84,6 +108,8 @@ function Dashboard() {
       try {
         const rv = reviewGame(pgn);
         setReview(rv);
+        // Count this analysis against the free tier (unlimited when logged in).
+        consumeAnalysis().then((left) => setUsesLeft(left)).catch(() => {});
         // Feed the player's mistakes into the spaced-repetition clinic.
         captureFromReview(rv, myColor).then((n) => setCaptured(n)).catch(() => {});
       } catch (e) {
@@ -101,8 +127,7 @@ function Dashboard() {
     { id: 'courses', label: '🎓 Masterclasses' },
     { id: 'analytics', label: '📈 Analytics' },
     { id: 'plan', label: '🗓️ Study Plan' },
-    { id: 'history', label: '🗂️ History' },
-    { id: 'account', label: '👤 Account' },
+    { id: 'account', label: loggedIn ? '👤 Account' : '🔑 Login' },
     { id: 'premium', label: '⭐ Premium' },
   ];
 
@@ -152,15 +177,49 @@ function Dashboard() {
         {tab === 'courses' && <Masterclass />}
         {tab === 'analytics' && <Analytics />}
         {tab === 'plan' && <StudyPlan />}
-        {tab === 'history' && <GameHistory onOpen={(p) => { setPgn(p); setTab('review'); }} />}
-        {tab === 'account' && <LoginPage />}
+        {tab === 'account' && (
+          <LoginPage onAuthChanged={() => refreshAuthUsage()} />
+        )}
         {tab === 'premium' && <PremiumPage />}
 
         {tab === 'review' && (
         <>
         <p className="text-xs text-gray-500 mb-4">
-          Paste a PGN and get per-move classification, accuracy and coaching (blueprint §8).
+          Paste a PGN or pick a past game, then get per-move classification, accuracy and coaching (blueprint §8).
         </p>
+
+        {/* Free-tier status / lock */}
+        {!loggedIn && (
+          locked ? (
+            <div className="mb-4 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4">
+              <div className="text-sm font-semibold text-yellow-300 mb-1">
+                🔒 You've used all {FREE_ANALYSIS_LIMIT} free analyses
+              </div>
+              <div className="text-xs text-gray-300 mb-3">
+                Log in for unlimited game analysis and cloud history, or go Premium for the full toolkit.
+              </div>
+              <div className="flex gap-2">
+                <button
+                  className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-black hover:brightness-110"
+                  onClick={() => setTab('account')}
+                >
+                  Log in — it's free
+                </button>
+                <button
+                  className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-200 hover:border-accent"
+                  onClick={() => setTab('premium')}
+                >
+                  See Premium ⭐
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mb-4 text-xs text-gray-400">
+              Free tier · <span className="text-accent font-semibold">{usesLeft}</span> of {FREE_ANALYSIS_LIMIT} analyses left ·{' '}
+              <button className="text-accent underline" onClick={() => setTab('account')}>Log in</button> for unlimited
+            </div>
+          )
+        )}
 
         <div className="mb-3 text-xs text-gray-400 flex items-center gap-2">
           Your color for mistake capture:
@@ -175,27 +234,10 @@ function Dashboard() {
           {captured !== null && <span className="text-accent">+{captured} mistake(s) saved to clinic</span>}
         </div>
 
-        {recent.length > 0 && (
-          <div className="mb-4">
-            <div className="text-xs text-gray-400 mb-1">Recorded games ({recent.length})</div>
-            <div className="flex flex-wrap gap-2">
-              {recent.slice(0, 12).map((g) => (
-                <button
-                  key={g.id}
-                  className="rounded bg-panel-alt border border-gray-700 px-3 py-1.5 text-xs hover:border-accent"
-                  onClick={() => setPgn(g.pgn)}
-                  title={new Date(g.createdAt).toLocaleString()}
-                >
-                  <span className="font-mono text-gray-300">{g.result}</span>{' '}
-                  <span className="text-gray-500">
-                    {g.source} · {new Date(g.createdAt).toLocaleDateString()}
-                  </span>
-                  {g.syncedToServer && <span className="text-accent ml-1">☁</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Cloud/local game history integrated directly into Review */}
+        <div className="mb-4">
+          <GameHistory onOpen={(p) => { setPgn(p); setReview(null); }} />
+        </div>
 
         <textarea
           className="w-full h-32 rounded bg-gray-900 border border-gray-700 p-3 text-xs font-mono outline-none focus:border-accent"
