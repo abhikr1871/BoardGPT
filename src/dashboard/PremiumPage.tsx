@@ -1,25 +1,22 @@
 import { useEffect, useState } from 'react';
-import { getAuth, type AuthState } from '../lib/auth';
-import { loadSettings, saveSettings } from '../lib/storage';
+import { getAuth, refreshPlan, type AuthState } from '../lib/auth';
+import { loadSettings } from '../lib/storage';
 
 /**
- * The upgrade page (Phase 5). Shows a Free vs Premium comparison from the
- * roadmap feature table, monthly/yearly pricing, and an Upgrade button that
- * kicks off Stripe Checkout via the backend when one is configured.
+ * The upgrade page (Phase 5). Shows a Free vs Premium comparison, ₹ pricing, and
+ * an Upgrade button that starts a Razorpay Subscription via the backend and
+ * opens Razorpay's hosted checkout page (short_url) in a new tab.
+ *
+ * We deliberately use the HOSTED page rather than the embedded checkout.js:
+ * MV3 forbids loading remote scripts inside extension pages, so embedding
+ * Razorpay's script would break the extension / risk Web Store rejection.
+ * After payment, the backend webhook flips the plan to premium and the user
+ * clicks "I've completed payment" here to refresh their status via GET /me.
  */
 
 const ACCENT = '#22c55e';
-const PANEL = '#0f172a';
-const PANEL_ALT = '#111827';
-const BORDER = '#1f2937';
 const TEXT = '#e5e7eb';
 const MUTED = '#9ca3af';
-
-declare global {
-  interface Window {
-    Razorpay: any;
-  }
-}
 
 type Interval = 'monthly' | 'yearly';
 
@@ -61,9 +58,10 @@ export function PremiumPage() {
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [interval, setInterval] = useState<Interval>('yearly');
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showCheckout, setShowCheckout] = useState(false);
+  const [pendingCheckout, setPendingCheckout] = useState(false);
 
   useEffect(() => {
     getAuth().then(setAuth).catch(() => {});
@@ -71,79 +69,72 @@ export function PremiumPage() {
 
   const isPremium = auth?.plan === 'premium';
 
+  /**
+   * Start a Razorpay subscription on the backend and open its hosted checkout
+   * (short_url) in a new tab. No remote script is loaded inside the extension.
+   */
   async function upgrade() {
     setBusy(true);
     setMessage(null);
     setError(null);
     try {
       const settings = await loadSettings();
-      const baseUrl = settings.apiBaseUrl ? trimBaseUrl(settings.apiBaseUrl) : 'http://localhost:4000';
-      const token = settings.apiToken;
+      const baseUrl = trimBaseUrl(settings.apiBaseUrl ?? '');
+      const token = settings.apiToken?.trim();
 
-      if (!token) {
-        throw new Error('Please log in first to upgrade to Premium.');
-      }
+      if (!baseUrl) throw new Error('Set your Backend API URL in Settings first.');
+      if (!token) throw new Error('Please log in (Account tab) before upgrading.');
 
-      // 1. Create Razorpay order via backend
-      const createRes = await fetch(`${baseUrl}/api/create-order`, {
+      const res = await fetch(`${baseUrl}/api/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ interval }),
       });
-      
-      const orderData = await createRes.json();
-      if (!createRes.ok) {
-        throw new Error(orderData.error || 'Failed to create order');
+
+      let data: { shortUrl?: string; error?: string } = {};
+      try {
+        data = await res.json();
+      } catch {
+        /* non-JSON error body */
       }
+      if (!res.ok) {
+        throw new Error(
+          data.error ||
+            (res.status === 503
+              ? 'Payments are not configured on the server yet (Razorpay keys missing).'
+              : `Checkout failed (server responded ${res.status}).`),
+        );
+      }
+      if (!data.shortUrl) throw new Error('The server did not return a checkout link.');
 
-      // 2. Open Razorpay Checkout modal
-      const options = {
-        key: orderData.keyId,
-        amount: orderData.amount,
-        currency: orderData.currency,
-        name: 'BoardGPT',
-        description: `Premium ${interval === 'yearly' ? 'Yearly' : 'Monthly'} Subscription`,
-        order_id: orderData.orderId,
-        handler: async function (response: any) {
-          try {
-            setBusy(true);
-            const verifyRes = await fetch(`${baseUrl}/api/verify`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-              body: JSON.stringify(response),
-            });
-            const verifyData = await verifyRes.json();
-            if (!verifyRes.ok) {
-              throw new Error(verifyData.error || 'Verification failed');
-            }
-            setMessage('Payment successful! Welcome to BoardGPT Premium.');
-            
-            // Refresh auth state in UI
-            await saveSettings({ plan: 'premium' });
-            const nextAuth = await getAuth();
-            setAuth(nextAuth);
-          } catch (e) {
-            setError((e as Error).message || 'Payment verification failed.');
-          } finally {
-            setBusy(false);
-          }
-        },
-        prefill: {
-          email: auth?.email || '',
-        },
-        theme: {
-          color: '#22c55e'
-        }
-      };
-
-      const rzp = new window.Razorpay(options);
-      rzp.on('payment.failed', function (response: any) {
-        setError(response.error.description);
-      });
-      rzp.open();
+      // Open Razorpay's hosted subscription page in a new tab.
+      window.open(data.shortUrl, '_blank', 'noopener,noreferrer');
+      setPendingCheckout(true);
+      setMessage('Complete the payment in the new tab, then click "I’ve completed payment".');
     } catch (e) {
       setError((e as Error).message || 'Something went wrong.');
+    } finally {
       setBusy(false);
+    }
+  }
+
+  /** After paying on the hosted page, re-read the plan from the backend (/me). */
+  async function refreshStatus() {
+    setRefreshing(true);
+    setError(null);
+    try {
+      const next = await refreshPlan();
+      setAuth(next);
+      if (next.plan === 'premium') {
+        setMessage('🎉 You’re Premium! Enjoy the full toolkit.');
+        setPendingCheckout(false);
+      } else {
+        setMessage('Payment not confirmed yet. It can take a few seconds — try again shortly.');
+      }
+    } catch {
+      setError('Could not refresh your status. Check your connection and try again.');
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -342,6 +333,29 @@ export function PremiumPage() {
             >
               {isPremium ? 'Premium Active' : busy ? 'Please wait…' : 'Upgrade to Premium'}
             </button>
+
+            {(pendingCheckout || (auth?.token && !isPremium)) && !isPremium && (
+              <button
+                onClick={() => void refreshStatus()}
+                disabled={refreshing}
+                style={{
+                  width: '100%',
+                  maxWidth: 400,
+                  marginTop: 12,
+                  padding: '12px 24px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(34,197,94,0.4)',
+                  background: 'transparent',
+                  color: ACCENT,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: refreshing ? 'default' : 'pointer',
+                  opacity: refreshing ? 0.7 : 1,
+                }}
+              >
+                {refreshing ? 'Checking…' : 'I’ve completed payment — refresh status'}
+              </button>
+            )}
 
             {message && <div style={{ fontSize: 13, fontWeight: 600, color: '#4ade80', marginTop: 16 }}>{message}</div>}
             {error && <div style={{ fontSize: 13, fontWeight: 600, color: '#f87171', marginTop: 16 }}>{error}</div>}

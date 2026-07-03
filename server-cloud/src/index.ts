@@ -1,6 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
-import { env, assertEnv, razorpayEnabled } from './env.js';
+import { env, assertEnv, razorpayEnabled, razorpaySubscriptionsEnabled } from './env.js';
 import { connectDb } from './db.js';
 import authRouter from './routes/auth.js';
 import gamesRouter from './routes/games.js';
@@ -11,7 +11,12 @@ const app = express();
 
 app.use(cors({ origin: true }));
 
-// Everything parses JSON.
+// The Razorpay webhook signature is computed over the exact raw bytes, so this
+// route must see a Buffer — register express.raw() for it BEFORE the global
+// express.json() below. Every other route gets parsed JSON.
+app.use('/api/webhook', express.raw({ type: '*/*' }));
+
+// Everything else parses JSON.
 app.use(express.json({ limit: '1mb' }));
 
 // Liveness probe — also reports whether Razorpay is wired up.
@@ -48,10 +53,11 @@ async function main(): Promise<void> {
   await connectDb();
   console.log('[db] connected to MongoDB');
 
-  if (!razorpayEnabled()) {
+  if (!razorpaySubscriptionsEnabled()) {
     console.warn(
-      '[razorpay] RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET not set — /api/create-order and /api/verify ' +
-        'will return 503. The rest of the API works normally.',
+      '[razorpay] Subscriptions not fully configured — /api/checkout will return 503. ' +
+        'Set RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_PLAN_MONTHLY and RAZORPAY_PLAN_YEARLY ' +
+        '(plus RAZORPAY_WEBHOOK_SECRET for /api/webhook). The rest of the API works normally.',
     );
   }
 

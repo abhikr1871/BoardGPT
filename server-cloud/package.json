@@ -1,13 +1,14 @@
 {
   "name": "boardgpt-server-cloud",
   "version": "0.1.0",
-  "description": "Cloud backend for BoardGPT (Phase 3-cloud + Phase 5): MongoDB game/mistake history, JWT auth, Stripe subscriptions. Independent of the Fastify+Postgres server in ../server.",
+  "description": "Cloud backend for BoardGPT (Phase 3-cloud + Phase 5): MongoDB game/mistake history, JWT auth, Razorpay subscriptions. Independent of the Fastify+Postgres server in ../server.",
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "create-plans": "node scripts/create-plans.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
