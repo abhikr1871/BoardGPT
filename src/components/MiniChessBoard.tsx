@@ -22,14 +22,15 @@ import { Chess, type Square } from 'chess.js';
  * squares chess.js reported as legal.
  */
 
-// Unicode glyphs. White pieces first, then black.
+// Unicode glyphs. We use the solid (traditionally "black") glyphs for BOTH colors,
+// and color them via CSS (white or black) so they are highly visible.
 const GLYPHS: Record<string, string> = {
-  wk: '♔',
-  wq: '♕',
-  wr: '♖',
-  wb: '♗',
-  wn: '♘',
-  wp: '♙',
+  wk: '♚',
+  wq: '♛',
+  wr: '♜',
+  wb: '♝',
+  wn: '♞',
+  wp: '♟',
   bk: '♚',
   bq: '♛',
   br: '♜',
@@ -53,6 +54,12 @@ export interface MiniChessBoardProps {
   orientation?: 'w' | 'b';
   /** A UCI string like "e2e4"; its from/to squares get a subtle highlight. */
   highlightUci?: string | null;
+  /** A UCI string like "e2e4"; draws an arrow from start to target. */
+  suggestedMoveUci?: string | null;
+  /** If provided, squares can be clicked (e.g. for board editor). */
+  onSquareClick?: (square: string) => void;
+  /** If provided, squares act as drop targets. */
+  onSquareDrop?: (square: string, piece: { type: string, color: 'w'|'b' }) => void;
   interactive?: boolean;
   /** Pixel size of the whole board (default 320). */
   size?: number;
@@ -75,31 +82,53 @@ export function MiniChessBoard({
   onMove,
   orientation = 'w',
   highlightUci = null,
+  suggestedMoveUci = null,
+  onSquareClick,
+  onSquareDrop,
   interactive = true,
   size = 320,
 }: MiniChessBoardProps) {
   const [selected, setSelected] = useState<string | null>(null);
 
-  // Parse the FEN once per render into an 8x8 grid. chess.js returns row 0 =
-  // rank 8, so board[r][c] maps directly to file c (a..h), rank (8 - r).
   const { board, legalTargets, turn } = useMemo(() => {
-    let game: Chess;
+    let grid: Array<Array<{type: string, color: 'w'|'b'} | null>> = Array(8).fill(null).map(() => Array(8).fill(null));
+    try {
+      const parts = fen.split(' ');
+      const rows = parts[0].split('/');
+      for (let r = 0; r < 8 && r < rows.length; r++) {
+        let c = 0;
+        const row = rows[r];
+        for (let i = 0; i < row.length && c < 8; i++) {
+          const char = row[i];
+          if (!isNaN(parseInt(char, 10))) {
+            c += parseInt(char, 10);
+          } else {
+            const color = char === char.toLowerCase() ? 'b' : 'w';
+            grid[r][c] = { type: char.toLowerCase(), color };
+            c++;
+          }
+        }
+      }
+    } catch {}
+
+    let game: Chess | null = null;
     try {
       game = new Chess(fen);
     } catch {
-      game = new Chess();
+      // Allow invalid FEN to be displayed using our custom grid parser
     }
-    const grid = game.board();
+
     const targets = new Set<string>();
-    if (interactive && selected) {
+    if (interactive && selected && game) {
       try {
-        const moves = game.moves({ square: selected as Square, verbose: true });
+        const moves = game.moves({ square: selected as any, verbose: true });
         for (const m of moves) targets.add(m.to);
       } catch {
         /* selected square had no piece / not side to move — no targets */
       }
     }
-    return { board: grid, legalTargets: targets, turn: game.turn() };
+    const t = game ? game.turn() : (fen.split(' ')[1] || 'w');
+    return { board: grid, legalTargets: targets, turn: t };
   }, [fen, selected, interactive]);
 
   const highlightFrom = highlightUci ? highlightUci.slice(0, 2) : null;
@@ -116,6 +145,11 @@ export function MiniChessBoard({
   }
 
   function handleSquareClick(sq: string, piece: { type: string; color: 'w' | 'b' } | null) {
+    if (onSquareClick) {
+      onSquareClick(sq);
+      return;
+    }
+
     if (!interactive || !onMove) return;
 
     // Clicking a legal target of the currently-selected piece → make the move.
@@ -153,9 +187,79 @@ export function MiniChessBoard({
   const glyphSize = Math.round(cell * 0.72);
   const coordSize = Math.max(8, Math.round(cell * 0.2));
 
+  let suggestedArrow = null;
+  if (suggestedMoveUci) {
+    const fromSq = suggestedMoveUci.slice(0, 2);
+    const toSq = suggestedMoveUci.slice(2, 4);
+
+    const getCenter = (sq: string) => {
+      if (sq.length !== 2) return { x: 0, y: 0 };
+      const cStr = sq.charCodeAt(0) - 97;
+      const rStr = 8 - parseInt(sq[1], 10);
+      const col = orientation === 'w' ? cStr : 7 - cStr;
+      const row = orientation === 'w' ? rStr : 7 - rStr;
+      return {
+        x: (col + 0.5) * cell,
+        y: (row + 0.5) * cell,
+      };
+    };
+
+    const start = getCenter(fromSq);
+    const end = getCenter(toSq);
+
+    // Shorten the line slightly so the arrowhead doesn't overflow the square center
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const shorten = cell * 0.35; // pull back the tip
+    const ratio = dist > shorten ? (dist - shorten) / dist : 1;
+    const arrowEndX = start.x + dx * ratio;
+    const arrowEndY = start.y + dy * ratio;
+
+    suggestedArrow = (
+      <svg
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: size,
+          height: size,
+          pointerEvents: 'none',
+          zIndex: 10,
+        }}
+      >
+        <defs>
+          <marker
+            id="arrowhead"
+            viewBox="0 0 10 10"
+            markerWidth={Math.max(12, size * 0.04)}
+            markerHeight={Math.max(12, size * 0.04)}
+            refX="8"
+            refY="5"
+            orient="auto"
+            markerUnits="userSpaceOnUse"
+          >
+            <polygon points="0 0, 10 5, 0 10" fill="rgba(56,189,248,0.85)" />
+          </marker>
+        </defs>
+        <line
+          x1={start.x}
+          y1={start.y}
+          x2={arrowEndX}
+          y2={arrowEndY}
+          stroke="rgba(56,189,248,0.85)"
+          strokeWidth={Math.max(4, size * 0.018)}
+          strokeLinecap="round"
+          markerEnd="url(#arrowhead)"
+        />
+      </svg>
+    );
+  }
+
   return (
     <div
       style={{
+        position: 'relative',
         width: size,
         height: size,
         display: 'grid',
@@ -190,13 +294,28 @@ export function MiniChessBoard({
             <div
               key={sq}
               onClick={() => handleSquareClick(sq, piece)}
+              onDragOver={(e) => { if (onSquareDrop) e.preventDefault(); }}
+              onDrop={(e) => {
+                if (onSquareDrop) {
+                  e.preventDefault();
+                  const data = e.dataTransfer.getData('text/plain');
+                  if (data) {
+                    try {
+                      const dropped = JSON.parse(data);
+                      if (dropped && dropped.type && dropped.color) {
+                        onSquareDrop(sq, dropped);
+                      }
+                    } catch {}
+                  }
+                }
+              }}
               style={{
                 position: 'relative',
                 background,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                cursor: canGrab || (isTarget && selected) ? 'pointer' : 'default',
+                cursor: onSquareClick || canGrab || (isTarget && selected) ? 'pointer' : 'default',
               }}
             >
               {/* Legal-move indicator: dot on empty squares, ring on captures. */}
@@ -228,11 +347,11 @@ export function MiniChessBoard({
                   style={{
                     fontSize: glyphSize,
                     lineHeight: 1,
-                    color: piece.color === 'w' ? '#f8fafc' : '#111827',
+                    color: piece.color === 'w' ? '#ffffff' : '#111827',
                     textShadow:
                       piece.color === 'w'
-                        ? '0 1px 1px rgba(0,0,0,0.55)'
-                        : '0 1px 1px rgba(255,255,255,0.25)',
+                        ? '0 1px 3px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.9)'
+                        : '0 1px 1px rgba(255,255,255,0.3)',
                     position: 'relative',
                     zIndex: 1,
                     pointerEvents: 'none',
@@ -278,6 +397,7 @@ export function MiniChessBoard({
           );
         }),
       )}
+      {suggestedArrow}
     </div>
   );
 }

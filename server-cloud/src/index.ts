@@ -1,6 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
-import { env, assertEnv, stripeEnabled } from './env.js';
+import { env, assertEnv, razorpayEnabled } from './env.js';
 import { connectDb } from './db.js';
 import authRouter from './routes/auth.js';
 import gamesRouter from './routes/games.js';
@@ -11,16 +11,12 @@ const app = express();
 
 app.use(cors({ origin: true }));
 
-// The Stripe webhook must see the RAW request body to verify its signature, so
-// it is mounted with express.raw() BEFORE the global JSON parser below.
-app.use('/api/webhook', express.raw({ type: 'application/json' }));
-
-// Everything else parses JSON.
+// Everything parses JSON.
 app.use(express.json({ limit: '1mb' }));
 
-// Liveness probe — also reports whether Stripe is wired up.
+// Liveness probe — also reports whether Razorpay is wired up.
 app.get('/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, stripe: stripeEnabled() });
+  res.json({ ok: true, razorpay: razorpayEnabled() });
 });
 
 // Routers. Auth is mounted at both the root (/login, /register, /me — what the
@@ -52,9 +48,9 @@ async function main(): Promise<void> {
   await connectDb();
   console.log('[db] connected to MongoDB');
 
-  if (!stripeEnabled()) {
+  if (!razorpayEnabled()) {
     console.warn(
-      '[stripe] STRIPE_SECRET_KEY not set — /api/checkout and /api/webhook ' +
+      '[razorpay] RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET not set — /api/create-order and /api/verify ' +
         'will return 503. The rest of the API works normally.',
     );
   }

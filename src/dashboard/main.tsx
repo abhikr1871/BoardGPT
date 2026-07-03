@@ -140,16 +140,16 @@ function Dashboard() {
 
   return (
     <div 
-      className="min-h-screen text-gray-100 font-sans relative overflow-x-hidden"
+      className="h-screen text-gray-100 font-sans relative overflow-hidden"
       style={{ background: 'linear-gradient(135deg, #020617 0%, #0f172a 100%)' }}
     >
       {/* Ambient background glows */}
       <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vh] rounded-full bg-green-500/10 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vh] rounded-full bg-cyan-500/10 blur-[120px] pointer-events-none" />
 
-      <div className="relative z-10 flex min-h-screen w-full">
+      <div className="relative z-10 flex h-full w-full">
         {/* ── Left sidebar ── */}
-        <aside className="shrink-0 w-60 border-r border-white/5 bg-gray-900/40 backdrop-blur-md flex flex-col p-4 gap-1">
+        <aside className="shrink-0 w-60 border-r border-white/5 bg-gray-900/40 backdrop-blur-md flex flex-col p-4 gap-1 h-full overflow-y-auto custom-scrollbar">
           <div className="flex items-center gap-2 px-2 mb-6 mt-1">
             <span className="text-2xl filter drop-shadow-[0_0_8px_rgba(34,197,94,0.5)]">♟</span>
             <span className="text-lg font-black bg-clip-text text-transparent bg-gradient-to-r from-green-400 to-cyan-400 tracking-tight">
@@ -182,7 +182,7 @@ function Dashboard() {
         </aside>
 
         {/* ── Main content (full remaining width) ── */}
-        <main className="flex-1 min-w-0 p-4 sm:p-8 overflow-x-hidden">
+        <main className="flex-1 min-w-0 p-4 sm:p-8 h-full overflow-y-auto custom-scrollbar">
         {tab === 'clinic' && <MistakeClinic />}
         {tab === 'trainer' && (
           <PremiumGate feature="Opening Trainer" premium={premium} onUpgrade={() => setTab('premium')}>

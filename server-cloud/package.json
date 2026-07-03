@@ -16,7 +16,7 @@
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.5.0",
-    "stripe": "^16.6.0"
+    "razorpay": "^2.9.6"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

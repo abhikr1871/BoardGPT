@@ -8,7 +8,8 @@ import 'dotenv/config';
  * missing var surfaces as a single clear log line (see index.ts) rather than a
  * stack trace thrown deep in an import graph.
  *
- * Stripe vars are optional: the payment routes degrade to 503 when they are
+ *
+ * Razorpay vars are optional: the payment routes degrade to 503 when they are
  * absent, which is why the whole server can still boot without them.
  */
 
@@ -24,10 +25,8 @@ export const env = {
   JWT_SECRET: read('JWT_SECRET'),
 
   // Optional — payment routes check these at request time.
-  STRIPE_SECRET_KEY: read('STRIPE_SECRET_KEY'),
-  STRIPE_WEBHOOK_SECRET: read('STRIPE_WEBHOOK_SECRET'),
-  STRIPE_PRICE_MONTHLY: read('STRIPE_PRICE_MONTHLY'),
-  STRIPE_PRICE_YEARLY: read('STRIPE_PRICE_YEARLY'),
+  RAZORPAY_KEY_ID: read('RAZORPAY_KEY_ID'),
+  RAZORPAY_KEY_SECRET: read('RAZORPAY_KEY_SECRET'),
 
   CLIENT_URL: process.env.CLIENT_URL ?? 'http://localhost:5173',
 } as const;
@@ -48,7 +47,7 @@ export function assertEnv(): void {
   }
 }
 
-/** True when Stripe is configured enough to open a Checkout Session. */
-export function stripeEnabled(): boolean {
-  return Boolean(env.STRIPE_SECRET_KEY);
+/** True when Razorpay is configured enough to open a Checkout Session. */
+export function razorpayEnabled(): boolean {
+  return Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getAuth, type AuthState } from '../lib/auth';
-import { loadSettings } from '../lib/storage';
+import { loadSettings, saveSettings } from '../lib/storage';
 
 /**
  * The upgrade page (Phase 5). Shows a Free vs Premium comparison from the
@@ -14,6 +14,12 @@ const PANEL_ALT = '#111827';
 const BORDER = '#1f2937';
 const TEXT = '#e5e7eb';
 const MUTED = '#9ca3af';
+
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
 
 type Interval = 'monthly' | 'yearly';
 
@@ -57,6 +63,7 @@ export function PremiumPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showCheckout, setShowCheckout] = useState(false);
 
   useEffect(() => {
     getAuth().then(setAuth).catch(() => {});
@@ -70,43 +77,79 @@ export function PremiumPage() {
     setError(null);
     try {
       const settings = await loadSettings();
-      const base = trimBaseUrl(settings.apiBaseUrl ?? '');
-      if (!base) {
-        setError('A backend must be configured to process payments. Set the Backend API URL in Settings.');
-        return;
+      const baseUrl = settings.apiBaseUrl ? trimBaseUrl(settings.apiBaseUrl) : 'http://localhost:4000';
+      const token = settings.apiToken;
+
+      if (!token) {
+        throw new Error('Please log in first to upgrade to Premium.');
       }
-      const res = await fetch(`${base}/api/checkout`, {
+
+      // 1. Create Razorpay order via backend
+      const createRes = await fetch(`${baseUrl}/api/create-order`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(settings.apiToken?.trim()
-            ? { Authorization: `Bearer ${settings.apiToken.trim()}` }
-            : {}),
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ interval }),
       });
-      if (!res.ok) {
-        setError(`Could not start checkout (server responded ${res.status}).`);
-        return;
+      
+      const orderData = await createRes.json();
+      if (!createRes.ok) {
+        throw new Error(orderData.error || 'Failed to create order');
       }
-      const body = (await res.json()) as { url?: string; checkoutUrl?: string };
-      const url = body.url ?? body.checkoutUrl;
-      if (url && typeof window !== 'undefined') {
-        window.open(url, '_blank', 'noopener');
-        setMessage('Opening secure Stripe checkout in a new tab…');
-      } else {
-        setError('The backend did not return a checkout URL.');
-      }
+
+      // 2. Open Razorpay Checkout modal
+      const options = {
+        key: orderData.keyId,
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: 'BoardGPT',
+        description: `Premium ${interval === 'yearly' ? 'Yearly' : 'Monthly'} Subscription`,
+        order_id: orderData.orderId,
+        handler: async function (response: any) {
+          try {
+            setBusy(true);
+            const verifyRes = await fetch(`${baseUrl}/api/verify`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify(response),
+            });
+            const verifyData = await verifyRes.json();
+            if (!verifyRes.ok) {
+              throw new Error(verifyData.error || 'Verification failed');
+            }
+            setMessage('Payment successful! Welcome to BoardGPT Premium.');
+            
+            // Refresh auth state in UI
+            await saveSettings({ plan: 'premium' });
+            const nextAuth = await getAuth();
+            setAuth(nextAuth);
+          } catch (e) {
+            setError((e as Error).message || 'Payment verification failed.');
+          } finally {
+            setBusy(false);
+          }
+        },
+        prefill: {
+          email: auth?.email || '',
+        },
+        theme: {
+          color: '#22c55e'
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', function (response: any) {
+        setError(response.error.description);
+      });
+      rzp.open();
     } catch (e) {
-      setError((e as Error).message || 'Something went wrong starting checkout.');
-    } finally {
+      setError((e as Error).message || 'Something went wrong.');
       setBusy(false);
     }
   }
 
   return (
     <div style={{ color: TEXT, fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
-      <div style={{ maxWidth: 720, margin: '0 auto', padding: 24 }}>
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: 24 }}>
         {/* Hero */}
         <div
           className="relative overflow-hidden"
@@ -160,18 +203,22 @@ export function PremiumPage() {
           </div>
         </div>
 
-        {/* Comparison table */}
-        <div
-          style={{
-            background: 'rgba(15,23,42,0.4)',
-            border: '1px solid rgba(255,255,255,0.05)',
-            borderRadius: 20,
-            overflow: 'hidden',
-            marginBottom: 32,
-            boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
-            backdropFilter: 'blur(12px)',
-          }}
-        >
+        {/* Flex Container for Side-by-Side Layout */}
+        <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          
+          {/* Left: Comparison table */}
+          <div
+            style={{
+              flex: '1 1 500px',
+              background: 'rgba(15,23,42,0.4)',
+              border: '1px solid rgba(255,255,255,0.05)',
+              borderRadius: 20,
+              overflow: 'hidden',
+              marginBottom: 32,
+              boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+              backdropFilter: 'blur(12px)',
+            }}
+          >
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
             <thead>
               <tr style={{ background: 'rgba(255,255,255,0.02)' }}>
@@ -213,93 +260,96 @@ export function PremiumPage() {
           </table>
         </div>
 
-        {/* Pricing */}
-        <div
-          style={{
-            background: 'linear-gradient(180deg, rgba(30,41,59,0.5) 0%, rgba(15,23,42,0.7) 100%)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 24,
-            padding: 32,
-            backdropFilter: 'blur(12px)',
-            boxShadow: '0 10px 40px rgba(0,0,0,0.4)',
-            textAlign: 'center',
-          }}
-        >
-          <div style={{ display: 'inline-flex', gap: 6, marginBottom: 24, background: 'rgba(0,0,0,0.3)', padding: 6, borderRadius: 14, border: '1px solid rgba(255,255,255,0.05)' }}>
-            {(['monthly', 'yearly'] as Interval[]).map((i) => {
-              const active = interval === i;
-              return (
-                <button
-                  key={i}
-                  onClick={() => setInterval(i)}
-                  style={{
-                    padding: '10px 24px',
-                    borderRadius: 10,
-                    border: 'none',
-                    background: active ? 'linear-gradient(135deg, #16a34a, #059669)' : 'transparent',
-                    color: active ? '#ffffff' : '#94a3b8',
-                    fontSize: 14,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    textTransform: 'capitalize',
-                    boxShadow: active ? '0 4px 12px rgba(22,163,74,0.4)' : 'none',
-                    transition: 'all 0.2s ease',
-                  }}
-                >
-                  {i}
-                </button>
-              );
-            })}
-          </div>
-
-          <div style={{ marginBottom: 24 }}>
-            <span style={{ fontSize: 48, fontWeight: 900, color: '#f8fafc', letterSpacing: '-0.03em' }}>{PRICE[interval].amount}</span>
-            <span style={{ fontSize: 16, color: '#94a3b8', marginLeft: 8 }}>{PRICE[interval].caption}</span>
-          </div>
-
-          <button
-            onClick={() => void upgrade()}
-            disabled={busy || isPremium}
+          {/* Right: Pricing / Checkout */}
+          <div
             style={{
+              flex: '0 1 400px',
               width: '100%',
-              maxWidth: 400,
-              padding: '16px 24px',
-              borderRadius: 14,
-              border: 'none',
-              background: isPremium 
-                ? 'rgba(255,255,255,0.05)' 
-                : 'linear-gradient(135deg, #22c55e 0%, #0ea5e9 100%)',
-              color: isPremium ? '#64748b' : '#ffffff',
-              fontSize: 16,
-              fontWeight: 800,
-              cursor: isPremium || busy ? 'default' : 'pointer',
-              opacity: busy ? 0.8 : 1,
-              boxShadow: isPremium ? 'none' : '0 8px 20px rgba(34,197,94,0.4)',
-              transition: 'transform 0.2s, box-shadow 0.2s',
-              transform: busy ? 'scale(0.98)' : 'scale(1)',
-            }}
-            onMouseEnter={(e) => {
-              if (!isPremium && !busy) {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 12px 24px rgba(34,197,94,0.5)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!isPremium && !busy) {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = '0 8px 20px rgba(34,197,94,0.4)';
-              }
+              background: 'linear-gradient(180deg, rgba(30,41,59,0.5) 0%, rgba(15,23,42,0.7) 100%)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 24,
+              padding: 32,
+              backdropFilter: 'blur(12px)',
+              boxShadow: '0 10px 40px rgba(0,0,0,0.4)',
+              textAlign: 'center',
             }}
           >
-            {isPremium ? 'You are on Premium' : busy ? 'Starting checkout…' : 'Upgrade to Premium'}
-          </button>
+            <div style={{ display: 'inline-flex', gap: 6, marginBottom: 24, background: 'rgba(0,0,0,0.3)', padding: 6, borderRadius: 14, border: '1px solid rgba(255,255,255,0.05)' }}>
+              {(['monthly', 'yearly'] as Interval[]).map((i) => {
+                const active = interval === i;
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setInterval(i)}
+                    style={{
+                      padding: '10px 24px',
+                      borderRadius: 10,
+                      border: 'none',
+                      background: active ? 'linear-gradient(135deg, #16a34a, #059669)' : 'transparent',
+                      color: active ? '#ffffff' : '#94a3b8',
+                      fontSize: 14,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      textTransform: 'capitalize',
+                      boxShadow: active ? '0 4px 12px rgba(22,163,74,0.4)' : 'none',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    {i}
+                  </button>
+                );
+              })}
+            </div>
 
-          {message && <div style={{ fontSize: 13, fontWeight: 600, color: '#4ade80', marginTop: 16 }}>{message}</div>}
-          {error && <div style={{ fontSize: 13, fontWeight: 600, color: '#f87171', marginTop: 16 }}>{error}</div>}
+            <div style={{ marginBottom: 24 }}>
+              <span style={{ fontSize: 48, fontWeight: 900, color: '#f8fafc', letterSpacing: '-0.03em' }}>{PRICE[interval].amount}</span>
+              <span style={{ fontSize: 16, color: '#94a3b8', marginLeft: 8 }}>{PRICE[interval].caption}</span>
+            </div>
 
-          <p style={{ fontSize: 12, color: '#64748b', marginTop: 20, textAlign: 'center' }}>
-            🔒 Secure payment via Stripe. Cancel anytime.
-          </p>
+            <button
+              onClick={() => void upgrade()}
+              disabled={busy}
+              style={{
+                width: '100%',
+                maxWidth: 400,
+                padding: '16px 24px',
+                borderRadius: 14,
+                border: 'none',
+                background: isPremium 
+                  ? 'rgba(255,255,255,0.05)' 
+                  : 'linear-gradient(135deg, #22c55e 0%, #0ea5e9 100%)',
+                color: isPremium ? '#64748b' : '#ffffff',
+                fontSize: 16,
+                fontWeight: 800,
+                cursor: busy ? 'default' : 'pointer',
+                opacity: busy ? 0.8 : 1,
+                boxShadow: isPremium ? 'none' : '0 8px 20px rgba(34,197,94,0.4)',
+                transition: 'transform 0.2s, box-shadow 0.2s',
+                transform: busy ? 'scale(0.98)' : 'scale(1)',
+              }}
+              onMouseEnter={(e) => {
+                if (!isPremium && !busy) {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 12px 24px rgba(34,197,94,0.5)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isPremium && !busy) {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 8px 20px rgba(34,197,94,0.4)';
+                }
+              }}
+            >
+              {isPremium ? 'Premium Active' : busy ? 'Please wait…' : 'Upgrade to Premium'}
+            </button>
+
+            {message && <div style={{ fontSize: 13, fontWeight: 600, color: '#4ade80', marginTop: 16 }}>{message}</div>}
+            {error && <div style={{ fontSize: 13, fontWeight: 600, color: '#f87171', marginTop: 16 }}>{error}</div>}
+
+            <p style={{ fontSize: 12, color: '#64748b', marginTop: 20, textAlign: 'center' }}>
+              🔒 Secure payment via Razorpay. Cancel anytime.
+            </p>
+          </div>
         </div>
       </div>
     </div>
