@@ -22,10 +22,13 @@ const userSchema = new Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
-    plan: { type: String, enum: ['free', 'premium'], default: 'free', required: true },
+    plan: { type: String, enum: ['free', 'premium'], default: 'premium', required: true },
     // Razorpay subscription this user started (sub_...). Used to resolve the
     // account from webhook events and to reconcile entitlement.
     razorpaySubscriptionId: { type: String },
+    // Razorpay payment link this user created (plink_...). Used to resolve the
+    // account from webhook events.
+    razorpayPaymentLinkId: { type: String },
     // End of the current paid billing cycle (from the subscription's current_end).
     subscriptionEnd: { type: Date },
     createdAt: { type: Date, default: Date.now },

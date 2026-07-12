@@ -112,7 +112,7 @@ export const DEFAULT_SETTINGS: Settings = {
   anthropicApiKey: '',
   claudeModel: 'claude-sonnet-5',
   liveAutoDetect: true,
-  apiBaseUrl: 'http://localhost:3000',
+  apiBaseUrl: 'http://localhost:4000',
   apiToken: '',
   showBestArrow: true,
   showAltArrow: true,

@@ -1,6 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
-import { env, assertEnv, razorpayEnabled, razorpaySubscriptionsEnabled } from './env.js';
+import { env, assertEnv, razorpayEnabled } from './env.js';
 import { connectDb } from './db.js';
 import authRouter from './routes/auth.js';
 import gamesRouter from './routes/games.js';
@@ -53,11 +53,10 @@ async function main(): Promise<void> {
   await connectDb();
   console.log('[db] connected to MongoDB');
 
-  if (!razorpaySubscriptionsEnabled()) {
+  if (!razorpayEnabled()) {
     console.warn(
-      '[razorpay] Subscriptions not fully configured — /api/checkout will return 503. ' +
-        'Set RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_PLAN_MONTHLY and RAZORPAY_PLAN_YEARLY ' +
-        '(plus RAZORPAY_WEBHOOK_SECRET for /api/webhook). The rest of the API works normally.',
+      '[razorpay] Payments not configured — /api/checkout will return 503. ' +
+        'Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET (plus RAZORPAY_WEBHOOK_SECRET for /api/webhook). The rest of the API works normally.',
     );
   }
 

@@ -38,8 +38,7 @@ function Options() {
   return (
     <div className="min-h-screen bg-panel text-gray-100 font-sans">
       <div className="max-w-xl mx-auto p-8">
-        <h1 className="text-lg font-bold text-accent mb-1">♟ BoardGPT — Settings</h1>
-        <p className="text-xs text-gray-500 mb-6">Blueprint §7 settings panel.</p>
+        <h1 className="text-lg font-bold text-accent mb-6">♟ BoardGPT — Settings</h1>
 
         <Row label="Analysis depth" hint="10–22 (Stockfish); scaled for the built-in engine">
           <div className="flex items-center gap-2">
@@ -141,60 +140,7 @@ function Options() {
             onChange={(e) => update('blunderShield', e.target.checked)} />
         </Row>
 
-        <Row label="Plan (local testing)" hint="Set Premium to preview premium-only sections without a live payment backend">
-          <select
-            className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm"
-            value={s.plan}
-            onChange={(e) => update('plan', e.target.value as 'free' | 'premium')}
-          >
-            <option value="free">Free</option>
-            <option value="premium">Premium</option>
-          </select>
-        </Row>
 
-        <Row label="Syzygy tablebase API" hint="Endgame tablebase endpoint (Lichess-compatible JSON). Swap in your own API.">
-          <input
-            className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm w-48 font-mono"
-            placeholder="https://tablebase.lichess.ovh"
-            value={s.syzygyApiUrl}
-            onChange={(e) => update('syzygyApiUrl', e.target.value)}
-          />
-        </Row>
-
-        <Row label="Backend API URL" hint="For game recording, e.g. http://localhost:3000 (blank = local only)">
-          <input
-            className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm w-48 font-mono"
-            placeholder="http://localhost:3000"
-            value={s.apiBaseUrl}
-            onChange={(e) => update('apiBaseUrl', e.target.value)}
-          />
-        </Row>
-
-        <Row label="Backend API token" hint="Optional bearer token / JWT">
-          <input
-            type="password"
-            className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm w-48 font-mono"
-            value={s.apiToken}
-            onChange={(e) => update('apiToken', e.target.value)}
-          />
-        </Row>
-
-        <Row label="Claude model" hint="Used for natural-language explanations">
-          <input
-            className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm w-48 font-mono"
-            value={s.claudeModel}
-            onChange={(e) => update('claudeModel', e.target.value)}
-          />
-        </Row>
-
-        <Row label="Anthropic API key" hint="Optional — leave blank to use the built-in heuristic coach">
-          <input
-            type="password" placeholder="sk-ant-…"
-            className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm w-48 font-mono"
-            value={s.anthropicApiKey}
-            onChange={(e) => update('anthropicApiKey', e.target.value)}
-          />
-        </Row>
 
         <div className="mt-6 flex items-center gap-3">
           <button

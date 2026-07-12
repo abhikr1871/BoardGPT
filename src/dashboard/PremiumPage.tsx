@@ -265,104 +265,31 @@ export function PremiumPage() {
               textAlign: 'center',
             }}
           >
-            <div style={{ display: 'inline-flex', gap: 6, marginBottom: 24, background: 'rgba(0,0,0,0.3)', padding: 6, borderRadius: 14, border: '1px solid rgba(255,255,255,0.05)' }}>
-              {(['monthly', 'yearly'] as Interval[]).map((i) => {
-                const active = interval === i;
-                return (
-                  <button
-                    key={i}
-                    onClick={() => setInterval(i)}
-                    style={{
-                      padding: '10px 24px',
-                      borderRadius: 10,
-                      border: 'none',
-                      background: active ? 'linear-gradient(135deg, #16a34a, #059669)' : 'transparent',
-                      color: active ? '#ffffff' : '#94a3b8',
-                      fontSize: 14,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      textTransform: 'capitalize',
-                      boxShadow: active ? '0 4px 12px rgba(22,163,74,0.4)' : 'none',
-                      transition: 'all 0.2s ease',
-                    }}
-                  >
-                    {i}
-                  </button>
-                );
-              })}
-            </div>
-
             <div style={{ marginBottom: 24 }}>
-              <span style={{ fontSize: 48, fontWeight: 900, color: '#f8fafc', letterSpacing: '-0.03em' }}>{PRICE[interval].amount}</span>
-              <span style={{ fontSize: 16, color: '#94a3b8', marginLeft: 8 }}>{PRICE[interval].caption}</span>
+              <span style={{ fontSize: 32, fontWeight: 900, color: '#f8fafc', letterSpacing: '-0.02em' }}>Premium is Free!</span>
             </div>
+            
+            <p style={{ fontSize: 16, color: '#94a3b8', marginBottom: 32, lineHeight: 1.6 }}>
+              As an early user, you have been automatically granted full access to all Premium features at no cost!
+            </p>
 
             <button
-              onClick={() => void upgrade()}
-              disabled={busy}
+              disabled={true}
               style={{
                 width: '100%',
                 maxWidth: 400,
                 padding: '16px 24px',
                 borderRadius: 14,
-                border: 'none',
-                background: isPremium 
-                  ? 'rgba(255,255,255,0.05)' 
-                  : 'linear-gradient(135deg, #22c55e 0%, #0ea5e9 100%)',
-                color: isPremium ? '#64748b' : '#ffffff',
+                border: '1px solid rgba(34,197,94,0.4)',
+                background: 'rgba(34,197,94,0.1)',
+                color: '#4ade80',
                 fontSize: 16,
                 fontWeight: 800,
-                cursor: busy ? 'default' : 'pointer',
-                opacity: busy ? 0.8 : 1,
-                boxShadow: isPremium ? 'none' : '0 8px 20px rgba(34,197,94,0.4)',
-                transition: 'transform 0.2s, box-shadow 0.2s',
-                transform: busy ? 'scale(0.98)' : 'scale(1)',
-              }}
-              onMouseEnter={(e) => {
-                if (!isPremium && !busy) {
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 12px 24px rgba(34,197,94,0.5)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isPremium && !busy) {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 8px 20px rgba(34,197,94,0.4)';
-                }
+                cursor: 'default',
               }}
             >
-              {isPremium ? 'Premium Active' : busy ? 'Please wait…' : 'Upgrade to Premium'}
+              Premium Active
             </button>
-
-            {(pendingCheckout || (auth?.token && !isPremium)) && !isPremium && (
-              <button
-                onClick={() => void refreshStatus()}
-                disabled={refreshing}
-                style={{
-                  width: '100%',
-                  maxWidth: 400,
-                  marginTop: 12,
-                  padding: '12px 24px',
-                  borderRadius: 12,
-                  border: '1px solid rgba(34,197,94,0.4)',
-                  background: 'transparent',
-                  color: ACCENT,
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor: refreshing ? 'default' : 'pointer',
-                  opacity: refreshing ? 0.7 : 1,
-                }}
-              >
-                {refreshing ? 'Checking…' : 'I’ve completed payment — refresh status'}
-              </button>
-            )}
-
-            {message && <div style={{ fontSize: 13, fontWeight: 600, color: '#4ade80', marginTop: 16 }}>{message}</div>}
-            {error && <div style={{ fontSize: 13, fontWeight: 600, color: '#f87171', marginTop: 16 }}>{error}</div>}
-
-            <p style={{ fontSize: 12, color: '#64748b', marginTop: 20, textAlign: 'center' }}>
-              🔒 Secure payment via Razorpay. Cancel anytime.
-            </p>
           </div>
         </div>
       </div>

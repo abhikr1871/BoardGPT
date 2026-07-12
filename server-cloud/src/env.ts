@@ -38,14 +38,6 @@ export const env = {
   RAZORPAY_KEY_SECRET: read('RAZORPAY_KEY_SECRET'),
   // Webhook signing secret — verifies POST /api/webhook payloads.
   RAZORPAY_WEBHOOK_SECRET: read('RAZORPAY_WEBHOOK_SECRET'),
-  // Subscription Plan IDs (plan_...) created in the Razorpay dashboard.
-  RAZORPAY_PLAN_MONTHLY: read('RAZORPAY_PLAN_MONTHLY'),
-  RAZORPAY_PLAN_YEARLY: read('RAZORPAY_PLAN_YEARLY'),
-
-  // How many billing cycles a subscription runs before it completes.
-  // 120 monthly cycles ≈ 10 years; 10 yearly cycles = 10 years.
-  PREMIUM_TOTAL_COUNT_MONTHLY: readInt('PREMIUM_TOTAL_COUNT_MONTHLY', 120),
-  PREMIUM_TOTAL_COUNT_YEARLY: readInt('PREMIUM_TOTAL_COUNT_YEARLY', 10),
 
   CLIENT_URL: process.env.CLIENT_URL ?? 'http://localhost:5173',
 } as const;
@@ -67,20 +59,9 @@ export function assertEnv(): void {
 }
 
 /**
- * True when Razorpay API keys are present. Enough to verify a webhook /
- * payment signature, but NOT enough to open a hosted subscription checkout —
- * that also needs the plan IDs (see {@link razorpaySubscriptionsEnabled}).
+ * True when Razorpay API keys are present. Enough to create payment links
+ * and verify webhooks.
  */
 export function razorpayEnabled(): boolean {
   return Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
-}
-
-/**
- * True when Razorpay is configured enough to create a hosted Subscription
- * checkout: API keys AND both plan IDs. `POST /api/checkout` requires this.
- */
-export function razorpaySubscriptionsEnabled(): boolean {
-  return Boolean(
-    razorpayEnabled() && env.RAZORPAY_PLAN_MONTHLY && env.RAZORPAY_PLAN_YEARLY,
-  );
 }

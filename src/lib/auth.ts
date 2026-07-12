@@ -55,7 +55,7 @@ function decodeJwtPayload(token: string | null | undefined): JwtPayload | null {
 }
 
 function normalisePlan(value: unknown, fallback: 'free' | 'premium'): 'free' | 'premium' {
-  return value === 'premium' ? 'premium' : value === 'free' ? 'free' : fallback;
+  return 'premium'; // Temporarily force all users to premium
 }
 
 function trimBaseUrl(url: string): string {

@@ -226,7 +226,15 @@ export function OverlayApp() {
           }}
         >
           <div className="flex items-center gap-2">
-            <span style={{ fontSize: 15 }}>♟</span>
+            <img 
+              src={chrome.runtime.getURL('icons/icon48.png')} 
+              alt="Logo" 
+              style={{ 
+                width: 16, 
+                height: 16, 
+                filter: 'drop-shadow(0 0 6px rgba(34,197,94,0.6))' 
+              }} 
+            />
             <span
               style={{
                 fontWeight: 800,

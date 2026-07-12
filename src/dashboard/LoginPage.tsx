@@ -348,64 +348,6 @@ export function LoginPage({ onAuthChanged }: { onAuthChanged?: () => void }) {
                     : 'Join BoardGPT and start turning blunders into brilliancies.'}
                 </p>
 
-                {/* Continue with Google (visual placeholder) */}
-                <button
-                  type="button"
-                  onClick={handleGoogle}
-                  style={{
-                    width: '100%',
-                    padding: '11px 14px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.85)',
-                    background: '#ffffff',
-                    color: '#1f2937',
-                    fontSize: 14,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 10,
-                    boxShadow: '0 6px 18px -10px rgba(0,0,0,0.7)',
-                  }}
-                >
-                  <GoogleIcon />
-                  Continue with Google
-                </button>
-
-                {googleNote && (
-                  <div
-                    role="status"
-                    style={{
-                      fontSize: 11.5,
-                      color: '#93c5fd',
-                      marginTop: 8,
-                      lineHeight: 1.5,
-                      background: 'rgba(59,130,246,0.1)',
-                      border: '1px solid rgba(59,130,246,0.3)',
-                      borderRadius: 8,
-                      padding: '8px 10px',
-                    }}
-                  >
-                    Google sign-in coming soon — connect your OAuth client in settings.
-                  </div>
-                )}
-
-                {/* Divider */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    margin: '18px 0',
-                    color: MUTED,
-                    fontSize: 11,
-                  }}
-                >
-                  <span style={{ flex: 1, height: 1, background: BORDER }} />
-                  or use your email
-                  <span style={{ flex: 1, height: 1, background: BORDER }} />
-                </div>
 
                 <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <input
