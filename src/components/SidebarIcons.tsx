@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 
 /**
  * Vertical floating icon strip (Phase 4 UI/UX). Pins to the right edge of the
@@ -14,29 +14,58 @@ interface Props {
   active?: Record<string, boolean>;
 }
 
-const ITEMS: { feature: SidebarFeature; icon: string; label: string }[] = [
+const ITEMS: { feature: SidebarFeature | 'website'; icon: string; label: string }[] = [
   { feature: 'openings', icon: '📖', label: 'Openings' },
   { feature: 'arrows', icon: '🎯', label: 'Board arrows' },
   { feature: 'coach', icon: '🧠', label: 'AI coach' },
   { feature: 'eval', icon: '📊', label: 'Evaluation' },
-  { feature: 'settings', icon: '⚙', label: 'Settings' },
+  { feature: 'settings', icon: '🔧', label: 'Settings' },
+  { feature: 'website', icon: '🌐', label: 'Dashboard / Website' },
 ];
 
 export function SidebarIcons({ onToggle, active }: Props) {
-  const [hovered, setHovered] = useState<SidebarFeature | null>(null);
+  const [hovered, setHovered] = useState<SidebarFeature | 'website' | null>(null);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef({ startX: 0, startY: 0, lastX: 0, lastY: 0 });
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    // Only initiate drag from the container or handle, not the buttons
+    if ((e.target as HTMLElement).tagName === 'BUTTON') return;
+    setIsDragging(true);
+    dragRef.current = { startX: e.clientX, startY: e.clientY, lastX: pos.x, lastY: pos.y };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!isDragging) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    setPos({ x: dragRef.current.lastX + dx, y: dragRef.current.lastY + dy });
+  };
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    setIsDragging(false);
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
 
   return (
     <div
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
       style={{
         position: 'fixed',
-        right: 8,
-        top: '50%',
+        right: 8 - pos.x, // Subtract x because it's anchored to right
+        top: `calc(50% + ${pos.y}px)`,
         transform: 'translateY(-50%)',
         zIndex: 2147483647,
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
         padding: 6,
+        paddingTop: 16, // Extra padding for drag handle
         borderRadius: 22,
         fontFamily: 'sans-serif',
         background: 'linear-gradient(160deg, rgba(15,25,35,0.8) 0%, rgba(17,24,39,0.8) 100%)',
@@ -44,8 +73,16 @@ export function SidebarIcons({ onToggle, active }: Props) {
         WebkitBackdropFilter: 'blur(14px)',
         border: '1px solid rgba(255,255,255,0.08)',
         boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+        cursor: isDragging ? 'grabbing' : 'grab',
+        touchAction: 'none', // Prevent scrolling on touch
       }}
     >
+      {/* Drag Handle UI */}
+      <div style={{ position: 'absolute', top: 6, left: 0, right: 0, height: 4, display: 'flex', justifyContent: 'center', gap: 2 }}>
+        <div style={{ width: 4, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.2)' }} />
+        <div style={{ width: 4, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.2)' }} />
+        <div style={{ width: 4, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.2)' }} />
+      </div>
       {ITEMS.map(({ feature, icon, label }) => {
         const isActive = !!active?.[feature];
         const isHover = hovered === feature;
@@ -54,7 +91,13 @@ export function SidebarIcons({ onToggle, active }: Props) {
             key={feature}
             title={label}
             aria-label={label}
-            onClick={() => onToggle(feature)}
+            onClick={() => {
+              if (feature === 'website') {
+                window.open(chrome.runtime.getURL('src/dashboard/index.html'), '_blank');
+              } else {
+                onToggle(feature as SidebarFeature);
+              }
+            }}
             onMouseEnter={() => setHovered(feature)}
             onMouseLeave={() => setHovered(null)}
             style={{

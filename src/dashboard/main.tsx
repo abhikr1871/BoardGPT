@@ -151,7 +151,7 @@ function Dashboard() {
         {/* ── Left sidebar ── */}
         <aside className="shrink-0 w-60 border-r border-white/5 bg-gray-900/40 backdrop-blur-md flex flex-col p-4 gap-1 h-full overflow-y-auto custom-scrollbar">
           <div className="flex items-center gap-2 px-2 mb-6 mt-1">
-            <span className="text-2xl filter drop-shadow-[0_0_8px_rgba(34,197,94,0.5)]">♟</span>
+            <img src="/icons/icon48.png" alt="Logo" className="w-8 h-8 drop-shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
             <span className="text-lg font-black bg-clip-text text-transparent bg-gradient-to-r from-green-400 to-cyan-400 tracking-tight">
               BoardGPT
             </span>
@@ -162,7 +162,13 @@ function Dashboard() {
             return (
               <button
                 key={t.id}
-                onClick={() => setTab(t.id)}
+                onClick={() => {
+                  if (!loggedIn && t.id !== 'account' && t.id !== 'premium') {
+                    setTab('account');
+                  } else {
+                    setTab(t.id);
+                  }
+                }}
                 style={{
                   background: active ? 'linear-gradient(135deg, #16a34a, #059669)' : 'transparent',
                   boxShadow: active ? '0 4px 12px rgba(22, 163, 74, 0.3)' : 'none',

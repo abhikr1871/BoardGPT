@@ -55,7 +55,7 @@ export default defineManifest({
   },
   web_accessible_resources: [
     {
-      resources: ['assets/*', 'icons/*', 'stockfish/*', 'src/offscreen/offscreen.html'],
+      resources: ['assets/*', 'icons/*', 'stockfish/*', 'src/offscreen/offscreen.html', 'src/dashboard/index.html', 'src/options/index.html'],
       matches: ['<all_urls>'],
     },
   ],

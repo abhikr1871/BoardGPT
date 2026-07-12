@@ -5,7 +5,7 @@ A self-contained cloud API for the BoardGPT chess extension implementing
 
 - **MongoDB** game + mistake history (Mongoose 8)
 - **JWT auth** (register / login / me) with bcrypt password hashing
-- **Stripe** subscription payments (Checkout + webhook)
+- **Razorpay** subscription payments (hosted checkout + signed webhook)
 
 > This service is **independent** of the existing [`../server`](../server) (a
 > Fastify + Postgres backend for local/demo use). You can run either or both;
@@ -15,7 +15,7 @@ A self-contained cloud API for the BoardGPT chess extension implementing
 ## Stack
 
 Node 20+, TypeScript (ESM), Express 4, Mongoose 8, jsonwebtoken, bcryptjs,
-stripe, cors, dotenv. Runs via [`tsx`](https://github.com/privatenumber/tsx) —
+razorpay, cors, dotenv. Runs via [`tsx`](https://github.com/privatenumber/tsx) —
 no build step needed.
 
 ## Configure
@@ -32,30 +32,41 @@ cp .env.example .env
 | `PORT` | no | Defaults to `4000`. |
 | `MONGODB_URI` | **yes** | MongoDB connection string. For [MongoDB Atlas](https://www.mongodb.com/atlas): create a free cluster → **Connect** → **Drivers** → copy the `mongodb+srv://…` URI and put your DB user's password in it. |
 | `JWT_SECRET` | **yes** | Any long random string. Used to sign JWTs. |
-| `STRIPE_SECRET_KEY` | no* | `sk_test_…` / `sk_live_…` from the [Stripe dashboard](https://dashboard.stripe.com/apikeys). Without it, the payment routes return 503. |
-| `STRIPE_WEBHOOK_SECRET` | no* | `whsec_…` from your webhook endpoint (or `stripe listen`). Needed to verify webhook events. |
-| `STRIPE_PRICE_MONTHLY` | no* | A recurring **Price** ID (`price_…`) for the monthly plan. |
-| `STRIPE_PRICE_YEARLY` | no* | A recurring **Price** ID for the yearly plan. |
-| `CLIENT_URL` | no | Where Stripe Checkout redirects back to. Defaults to `http://localhost:5173`. |
+| `RAZORPAY_KEY_ID` | no* | `rzp_test_…` / `rzp_live_…` from **Dashboard → Settings → API Keys**. Without it, the payment routes return 503. |
+| `RAZORPAY_KEY_SECRET` | no* | The secret shown once when you generate the API key. Also used to verify the `/api/payment/verify` signature. |
+| `RAZORPAY_WEBHOOK_SECRET` | no* | The signing secret you set when creating the webhook. Needed to verify `/api/webhook` events. |
+| `RAZORPAY_PLAN_MONTHLY` | no* | A subscription **Plan** ID (`plan_…`) for the ₹99/month plan. |
+| `RAZORPAY_PLAN_YEARLY` | no* | A subscription **Plan** ID (`plan_…`) for the ₹799/year plan. |
+| `PREMIUM_TOTAL_COUNT_MONTHLY` | no | Billing cycles before a monthly subscription completes. Default `120` (~10 years). |
+| `PREMIUM_TOTAL_COUNT_YEARLY` | no | Billing cycles before a yearly subscription completes. Default `10` (10 years). |
+| `CLIENT_URL` | no | Where the client returns after checkout. Defaults to `http://localhost:5173`. |
 
-\* Stripe vars are optional for boot. If `STRIPE_SECRET_KEY` is unset the server
-still starts; only `/api/checkout` and `/api/webhook` degrade to a `503` with a
-clear message. **The server will refuse to start if `MONGODB_URI` or
-`JWT_SECRET` is missing**, printing which one.
+\* Razorpay vars are optional for boot. If the keys are unset the server still
+starts; `/api/checkout` degrades to a `503` with a clear message (it also
+requires **both** plan IDs). **The server will refuse to start if `MONGODB_URI`
+or `JWT_SECRET` is missing**, printing which one.
 
-### Setting up Stripe (optional)
+### Setting up Razorpay Subscriptions (optional)
 
-1. In the Stripe dashboard, create a **Product** with two recurring **Prices**
-   (monthly and yearly). Copy each Price ID into `STRIPE_PRICE_MONTHLY` /
-   `STRIPE_PRICE_YEARLY`.
-2. Copy your secret key into `STRIPE_SECRET_KEY`.
-3. For webhooks locally, run the [Stripe CLI](https://stripe.com/docs/stripe-cli):
+1. **API keys** — In the [Razorpay dashboard](https://dashboard.razorpay.com/app/keys),
+   go to **Settings → API Keys → Generate Key**. Put the key ID in
+   `RAZORPAY_KEY_ID` and the secret (shown once) in `RAZORPAY_KEY_SECRET`.
+2. **Plans** — Create two subscription **Plans**: **monthly ₹99** and **yearly
+   ₹799** (currency INR). The quickest way is:
    ```bash
-   stripe listen --forward-to localhost:4000/api/webhook
+   npm run create-plans   # uses your keys, prints both plan IDs
    ```
-   It prints a `whsec_…` signing secret — put it in `STRIPE_WEBHOOK_SECRET`.
-   In production, add a webhook endpoint pointing at `https://YOUR_HOST/api/webhook`
-   for the events `checkout.session.completed` and `customer.subscription.deleted`.
+   Paste the printed IDs into `RAZORPAY_PLAN_MONTHLY` / `RAZORPAY_PLAN_YEARLY`.
+   (Or create them by hand under **Subscriptions → Plans → Create Plan** —
+   amounts are in paise: ₹99 = `9900`, ₹799 = `79900`.)
+3. **Webhook** — Under **Settings → Webhooks → Add New Webhook**, set the URL to
+   `https://YOUR_HOST/api/webhook`, choose a secret, and put that same value in
+   `RAZORPAY_WEBHOOK_SECRET`. Subscribe to these events:
+   `subscription.activated`, `subscription.charged`, `subscription.resumed`,
+   `subscription.cancelled`, `subscription.completed`, `subscription.halted`.
+
+The extension opens the subscription's hosted checkout page via the `short_url`
+returned by `/api/checkout` — no client-side Razorpay SDK integration needed.
 
 ## Run
 
@@ -66,6 +77,7 @@ npm run dev      # tsx watch — reloads on change → http://localhost:4000
 # or
 npm start        # tsx (no watch)
 npm run typecheck  # tsc --noEmit
+npm run create-plans  # create the ₹99/₹799 Razorpay plans, print their IDs
 ```
 
 ## Endpoints
@@ -104,19 +116,20 @@ work.
 
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
-| POST | `/api/checkout` | JWT | Body `{ interval: "monthly" \| "yearly" }` → `{ url }` (Stripe Checkout). 503 if Stripe unset. |
-| POST | `/api/webhook` | Stripe sig | Raw-body webhook. Sets `plan`/`subscriptionEnd` on `checkout.session.completed`; reverts to `free` on `customer.subscription.deleted`. |
+| POST | `/api/checkout` | JWT | Body `{ interval: "monthly" \| "yearly" }` → `{ subscriptionId, shortUrl, keyId }`. Creates a Razorpay Subscription and returns its hosted-checkout `short_url`. 503 if subscriptions aren't configured (keys + both plan IDs). |
+| POST | `/api/webhook` | Razorpay sig | Raw-body, HMAC-verified webhook. Grants `plan='premium'` (+ `subscriptionEnd` from `current_end`) on `subscription.activated`/`charged`/`resumed`; reverts to `free` on `subscription.cancelled`/`completed`/`halted`. Returns `{ received: true }` (400 on bad signature). |
+| POST | `/api/payment/verify` | JWT | Body `{ razorpay_payment_id, razorpay_subscription_id, razorpay_signature }`. Verifies the subscription signature and immediately sets the user premium (covers webhook lag) → `{ success: true }`. 400 on an invalid signature. |
 
 ### Misc
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| GET | `/health` | `{ ok: true, stripe: boolean }` |
+| GET | `/health` | `{ ok: true, razorpay: boolean }` |
 
 ## Data models (MongoDB)
 
 - **User** — `email` (unique), `passwordHash`, `plan` (`free`/`premium`),
-  `stripeCustomerId?`, `subscriptionEnd?`, `createdAt`.
+  `razorpaySubscriptionId?`, `subscriptionEnd?`, `createdAt`.
 - **Game** — `userId` (ref), `clientId` (unique sparse), `pgn`, `result`,
   `platform`, `playedAt`, `opponent?`, `timeControl?`, `myColor`, `accuracy?`,
   `blunders?`, `mistakes?`, `tags[]`.

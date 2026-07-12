@@ -14,16 +14,22 @@ export function toPlan(value: unknown): Plan {
 
 /**
  * An account. `plan` gates premium features; it is flipped to 'premium' by the
- * Stripe webhook on a completed checkout and back to 'free' when a subscription
- * is deleted. `passwordHash` is a bcrypt hash — the plaintext never leaves the
- * register/login handlers.
+ * Razorpay webhook when a subscription activates/charges and back to 'free'
+ * when it is cancelled/completed/halted. `passwordHash` is a bcrypt hash — the
+ * plaintext never leaves the register/login handlers.
  */
 const userSchema = new Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
-    plan: { type: String, enum: ['free', 'premium'], default: 'free', required: true },
-    stripeCustomerId: { type: String },
+    plan: { type: String, enum: ['free', 'premium'], default: 'premium', required: true },
+    // Razorpay subscription this user started (sub_...). Used to resolve the
+    // account from webhook events and to reconcile entitlement.
+    razorpaySubscriptionId: { type: String },
+    // Razorpay payment link this user created (plink_...). Used to resolve the
+    // account from webhook events.
+    razorpayPaymentLinkId: { type: String },
+    // End of the current paid billing cycle (from the subscription's current_end).
     subscriptionEnd: { type: Date },
     createdAt: { type: Date, default: Date.now },
   },

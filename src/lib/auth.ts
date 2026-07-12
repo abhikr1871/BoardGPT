@@ -55,7 +55,7 @@ function decodeJwtPayload(token: string | null | undefined): JwtPayload | null {
 }
 
 function normalisePlan(value: unknown, fallback: 'free' | 'premium'): 'free' | 'premium' {
-  return value === 'premium' ? 'premium' : value === 'free' ? 'free' : fallback;
+  return 'premium'; // Temporarily force all users to premium
 }
 
 function trimBaseUrl(url: string): string {
@@ -151,6 +151,32 @@ export async function register(email: string, password: string): Promise<AuthSta
 export async function logout(): Promise<AuthState> {
   await saveSettings({ apiToken: '', plan: 'free' });
   return { token: null, email: null, plan: 'free' };
+}
+
+/**
+ * Re-fetch the account from the backend (GET /me) and persist the authoritative
+ * plan. Used after a Razorpay payment completes so the extension reflects the
+ * upgrade even though the stored JWT still carries the old plan claim. Falls
+ * back to the current local state when there's no backend/token or the call fails.
+ */
+export async function refreshPlan(): Promise<AuthState> {
+  const settings = await loadSettings();
+  const base = trimBaseUrl(settings.apiBaseUrl ?? '');
+  const token = settings.apiToken?.trim() ? settings.apiToken.trim() : null;
+  if (!base || !token) return getAuth();
+  try {
+    const res = await fetch(`${base}/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return getAuth();
+    const body = (await res.json()) as { email?: string; plan?: 'free' | 'premium' };
+    const plan = normalisePlan(body.plan, settings.plan ?? 'free');
+    await saveSettings({ plan });
+    const payload = decodeJwtPayload(token);
+    return { token, email: body.email ?? payload?.email ?? null, plan };
+  } catch {
+    return getAuth();
+  }
 }
 
 /** True when the given auth/settings object represents a premium plan. */

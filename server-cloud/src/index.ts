@@ -11,7 +11,12 @@ const app = express();
 
 app.use(cors({ origin: true }));
 
-// Everything parses JSON.
+// The Razorpay webhook signature is computed over the exact raw bytes, so this
+// route must see a Buffer — register express.raw() for it BEFORE the global
+// express.json() below. Every other route gets parsed JSON.
+app.use('/api/webhook', express.raw({ type: '*/*' }));
+
+// Everything else parses JSON.
 app.use(express.json({ limit: '1mb' }));
 
 // Liveness probe — also reports whether Razorpay is wired up.
@@ -50,8 +55,8 @@ async function main(): Promise<void> {
 
   if (!razorpayEnabled()) {
     console.warn(
-      '[razorpay] RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET not set — /api/create-order and /api/verify ' +
-        'will return 503. The rest of the API works normally.',
+      '[razorpay] Payments not configured — /api/checkout will return 503. ' +
+        'Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET (plus RAZORPAY_WEBHOOK_SECRET for /api/webhook). The rest of the API works normally.',
     );
   }
 
